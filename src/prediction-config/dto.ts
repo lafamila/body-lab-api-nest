@@ -1,6 +1,7 @@
-import { IsBoolean, IsIn, IsNumber, IsOptional, IsString, Matches } from 'class-validator';
+import { IsBoolean, IsIn, IsNumber, IsObject, IsOptional, IsString, Matches } from 'class-validator';
 
 export type PredictionConfigKind = 'global' | 'meal' | 'drink' | 'bathroom' | 'workout';
+export type PredictionConfigMetadata = Record<string, unknown>;
 
 export class PredictionConfigItemDto {
   id!: string;
@@ -12,7 +13,32 @@ export class PredictionConfigItemDto {
   minuteFactor!: number | null;
   sortOrder!: number;
   isActive!: boolean;
+  metadata!: PredictionConfigMetadata;
   updatedAt!: string;
+}
+
+export class PredictionConfigGlobalRequirementDto {
+  key!: string;
+  label!: string;
+  present!: boolean;
+  item!: PredictionConfigItemDto | null;
+}
+
+export class PredictionConfigKindRequirementDto {
+  kind!: Exclude<PredictionConfigKind, 'global'>;
+  minActive!: number;
+  activeCount!: number;
+  present!: boolean;
+}
+
+export class PredictionConfigStatusDto {
+  isReady!: boolean;
+  requiresSetup!: boolean;
+  missingGlobalKeys!: string[];
+  missingKinds!: Exclude<PredictionConfigKind, 'global'>[];
+  requiredGlobals!: PredictionConfigGlobalRequirementDto[];
+  requiredKinds!: PredictionConfigKindRequirementDto[];
+  checkedAt!: string;
 }
 
 export class UpsertPredictionConfigItemDto {
@@ -45,4 +71,8 @@ export class UpsertPredictionConfigItemDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsObject()
+  metadata?: PredictionConfigMetadata;
 }

@@ -65,18 +65,33 @@ export class DaysRepository {
     await this.database.transaction(async (query) => {
       if (typeof payload.morningWeightKg !== 'undefined') {
         const measuredAt = payload.morningWeightMeasuredAt ?? `${localDate}T07:00:00.000Z`;
-        await query(
+        const [start, end] = this.bounds(localDate);
+        const updated = await query(
           `
-            insert into body_weight_logs (account_id, measured_at, value_kg, source, client_event_id)
-            values ($1, $2, $3, 'manual', $4)
-            on conflict (account_id, client_event_id) do update set
-              measured_at = excluded.measured_at,
-              value_kg = excluded.value_kg,
-              updated_at = now(),
-              deleted_at = null
+            update body_weight_logs
+            set measured_at = $4,
+                value_kg = $5,
+                source = 'manual',
+                client_event_id = coalesce(client_event_id, $6),
+                updated_at = now(),
+                deleted_at = null
+            where account_id = $1
+              and measured_at >= $2
+              and measured_at < $3
+              and deleted_at is null
+            returning *
           `,
-          [accountId, measuredAt, payload.morningWeightKg, `daily-weight:${localDate}`],
+          [accountId, start, end, measuredAt, payload.morningWeightKg, `daily-weight:${localDate}`],
         );
+        if (!updated.rowCount) {
+          await query(
+            `
+              insert into body_weight_logs (account_id, measured_at, value_kg, source, client_event_id)
+              values ($1, $2, $3, 'manual', $4)
+            `,
+            [accountId, measuredAt, payload.morningWeightKg, `daily-weight:${localDate}`],
+          );
+        }
       }
     });
 

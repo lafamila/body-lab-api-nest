@@ -8,6 +8,7 @@ create table if not exists prediction_config_items (
   minute_factor numeric(8, 5),
   sort_order integer not null default 0,
   is_active boolean not null default true,
+  metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   deleted_at timestamptz,

@@ -113,6 +113,13 @@ export class LogsRepository {
     accountId: string,
     payload: LogPayload,
   ): Promise<StoredLog> {
+    if (resource === 'weights') {
+      const existing = await this.updateExistingWeightForDate(query, accountId, payload);
+      if (existing) {
+        return existing;
+      }
+    }
+
     const config = LOG_TABLES[resource];
     const entries = this.entriesForPayload(config, payload, true);
     const columns = ['account_id', ...entries.map(([column]) => column)];
@@ -127,6 +134,57 @@ export class LogsRepository {
       params,
     );
     return this.toApi(result.rows[0]);
+  }
+
+  private async updateExistingWeightForDate(
+    query: DatabaseService['query'],
+    accountId: string,
+    payload: LogPayload,
+  ): Promise<StoredLog | null> {
+    const record = payload as Record<string, unknown>;
+    if (!record.measuredAt || typeof record.valueKg === 'undefined') {
+      return null;
+    }
+
+    const [start, end] = this.utcDayBounds(String(record.measuredAt));
+    const hasSource = Object.prototype.hasOwnProperty.call(record, 'source');
+    const hasNote = Object.prototype.hasOwnProperty.call(record, 'note');
+    const result = await query(
+      `
+        update body_weight_logs
+        set measured_at = $4,
+            value_kg = $5,
+            source = case when $6::boolean then $7 else source end,
+            note = case when $8::boolean then $9 else note end,
+            updated_at = now(),
+            deleted_at = null
+        where account_id = $1
+          and measured_at >= $2
+          and measured_at < $3
+          and deleted_at is null
+        returning *
+      `,
+      [
+        accountId,
+        start,
+        end,
+        record.measuredAt,
+        record.valueKg,
+        hasSource,
+        hasSource ? record.source : null,
+        hasNote,
+        hasNote ? record.note : null,
+      ],
+    );
+    return result.rowCount ? this.toApi(result.rows[0]) : null;
+  }
+
+  private utcDayBounds(isoDate: string): [string, string] {
+    const measuredAt = new Date(isoDate);
+    const start = new Date(Date.UTC(measuredAt.getUTCFullYear(), measuredAt.getUTCMonth(), measuredAt.getUTCDate()));
+    const end = new Date(start);
+    end.setUTCDate(end.getUTCDate() + 1);
+    return [start.toISOString(), end.toISOString()];
   }
 
   private entriesForPayload(config: LogTableConfig, payload: LogPayload, includeClientId: boolean): [string, unknown][] {

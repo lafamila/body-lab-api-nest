@@ -23,8 +23,8 @@ export class PredictionConfigRepository {
     const result = await this.database.query(
       `
         insert into prediction_config_items
-          (kind, key, label, mass_kg, stool_ratio, minute_factor, sort_order, is_active)
-        values ($1, $2, $3, $4, $5, $6, $7, $8)
+          (kind, key, label, mass_kg, stool_ratio, minute_factor, sort_order, is_active, metadata)
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         on conflict (kind, key) do update set
           label = excluded.label,
           mass_kg = excluded.mass_kg,
@@ -32,6 +32,7 @@ export class PredictionConfigRepository {
           minute_factor = excluded.minute_factor,
           sort_order = excluded.sort_order,
           is_active = excluded.is_active,
+          metadata = excluded.metadata,
           deleted_at = null,
           updated_at = now()
         returning *
@@ -45,6 +46,7 @@ export class PredictionConfigRepository {
         payload.minuteFactor ?? null,
         payload.sortOrder ?? 0,
         payload.isActive ?? true,
+        JSON.stringify(payload.metadata ?? {}),
       ],
     );
     return this.toDto(result.rows[0]);
@@ -62,6 +64,7 @@ export class PredictionConfigRepository {
             minute_factor = $7,
             sort_order = $8,
             is_active = $9,
+            metadata = $10,
             updated_at = now()
         where id = $1 and deleted_at is null
         returning *
@@ -76,6 +79,7 @@ export class PredictionConfigRepository {
         payload.minuteFactor ?? null,
         payload.sortOrder ?? 0,
         payload.isActive ?? true,
+        JSON.stringify(payload.metadata ?? {}),
       ],
     );
     if (!result.rowCount) {
@@ -115,8 +119,8 @@ export class PredictionConfigRepository {
         const result = await query(
           `
             insert into prediction_config_items
-              (kind, key, label, mass_kg, stool_ratio, minute_factor, sort_order, is_active)
-            values ($1, $2, $3, $4, $5, $6, $7, $8)
+              (kind, key, label, mass_kg, stool_ratio, minute_factor, sort_order, is_active, metadata)
+            values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             on conflict (kind, key) do update set
               label = excluded.label,
               mass_kg = excluded.mass_kg,
@@ -124,6 +128,7 @@ export class PredictionConfigRepository {
               minute_factor = excluded.minute_factor,
               sort_order = excluded.sort_order,
               is_active = excluded.is_active,
+              metadata = excluded.metadata,
               deleted_at = null,
               updated_at = now()
             returning *
@@ -137,6 +142,7 @@ export class PredictionConfigRepository {
             payload.minuteFactor ?? null,
             payload.sortOrder ?? 0,
             payload.isActive ?? true,
+            JSON.stringify(payload.metadata ?? {}),
           ],
         );
         rows.push(this.toDto(result.rows[0]));
@@ -156,7 +162,15 @@ export class PredictionConfigRepository {
       minuteFactor: row.minute_factor === null ? null : Number(row.minute_factor),
       sortOrder: Number(row.sort_order),
       isActive: Boolean(row.is_active),
+      metadata: this.metadataToDto(row.metadata),
       updatedAt: new Date(String(row.updated_at)).toISOString(),
     };
+  }
+
+  private metadataToDto(value: unknown): Record<string, unknown> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {};
+    }
+    return value as Record<string, unknown>;
   }
 }

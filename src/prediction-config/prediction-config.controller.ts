@@ -38,6 +38,40 @@ export class PredictionConfigController {
     return this.service.list(false);
   }
 
+  @UseGuards(BodyLabSessionGuard)
+  @Get('prediction-config/status')
+  status(@AuthAccountParam() _account: AuthAccount) {
+    return this.service.status();
+  }
+
+  @UseGuards(BodyLabSessionGuard)
+  @Get('prediction-config/items')
+  listForSettings(@AuthAccountParam() _account: AuthAccount, @Query('includeInactive') includeInactive?: string) {
+    return this.service.list(includeInactive === 'true');
+  }
+
+  @UseGuards(BodyLabSessionGuard)
+  @Post('prediction-config/items')
+  createForSettings(@AuthAccountParam() _account: AuthAccount, @Body() body: UpsertPredictionConfigItemDto) {
+    return this.service.upsert(body);
+  }
+
+  @UseGuards(BodyLabSessionGuard)
+  @Put('prediction-config/items/:id')
+  updateForSettings(
+    @AuthAccountParam() _account: AuthAccount,
+    @Param('id') id: string,
+    @Body() body: UpsertPredictionConfigItemDto,
+  ) {
+    return this.service.update(id, body);
+  }
+
+  @UseGuards(BodyLabSessionGuard)
+  @Delete('prediction-config/items/:id')
+  deleteForSettings(@AuthAccountParam() _account: AuthAccount, @Param('id') id: string) {
+    return this.service.delete(id);
+  }
+
   @Get('admin/login')
   adminLogin(@Res() response: Response) {
     response.type('html').send(loginHtml);
@@ -149,8 +183,19 @@ export class PredictionConfigController {
         minuteFactor: record.minuteFactor ?? null,
         sortOrder: record.sortOrder ?? 0,
         isActive: record.isActive ?? true,
+        metadata: this.normalizeMetadata(record.metadata),
       };
     });
+  }
+
+  private normalizeMetadata(value: unknown): Record<string, unknown> {
+    if (typeof value === 'undefined' || value === null) {
+      return {};
+    }
+    if (typeof value !== 'object' || Array.isArray(value)) {
+      throw new BadRequestException('prediction config metadata must be an object');
+    }
+    return value as Record<string, unknown>;
   }
 
   private isPredictionConfigKind(value: unknown): value is PredictionConfigKind {
@@ -166,7 +211,8 @@ const baseStyle = `
   h2 { margin: 0 0 10px; font-size: 15px; color: #e4e4e7; }
   section { border: 1px solid #27272a; border-radius: 8px; padding: 14px; margin: 14px 0; background: #0a0a0a; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  input, select, button { border: 1px solid #3f3f46; border-radius: 6px; background: #111113; color: #f4f4f5; padding: 7px 8px; font-size: 13px; }
+  input, select, button, textarea { border: 1px solid #3f3f46; border-radius: 6px; background: #111113; color: #f4f4f5; padding: 7px 8px; font-size: 13px; }
+  textarea { width: 100%; min-height: 58px; resize: vertical; box-sizing: border-box; }
   button { cursor: pointer; }
   button:disabled { cursor: default; opacity: .55; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -175,6 +221,10 @@ const baseStyle = `
   .number { width: 88px; }
   .key { width: 130px; }
   .label { width: 140px; }
+  .unit { width: 90px; }
+  .metadata-grid { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 8px; margin-top: 10px; }
+  .metadata-grid label { display: grid; gap: 4px; color: #a1a1aa; font-size: 12px; }
+  .metadata-text { max-width: 280px; color: #d4d4d8; font-size: 12px; line-height: 1.35; }
   .status { color: #a1a1aa; font-size: 12px; }
   .error { color: #f87171; }
   .success { color: #4ade80; }
@@ -301,12 +351,19 @@ const adminHtml = `<!doctype html>
       <button onclick="resetForm()">New</button>
       <button onclick="load()">Refresh</button>
     </div>
+    <div class="metadata-grid">
+      <label>Description<textarea id="metadataDescription" placeholder="What this value means in prediction"></textarea></label>
+      <label>Setup text<textarea id="metadataSetupText" placeholder="Text shown during initial setup"></textarea></label>
+      <label>Input hint<textarea id="metadataInputHint" placeholder="How to choose or enter this value"></textarea></label>
+      <label>Unit<input id="metadataUnit" class="unit" placeholder="kg, hours, kg/hour"></label>
+      <label><span>Required in setup</span><input id="metadataRequiredInSetup" type="checkbox"></label>
+    </div>
     <p class="status">meal.massKg는 1인분 입력시 더해질 무게, meal.stoolRatio는 대변 배출 비율입니다. drink.massKg는 amount 1당 더해질 무게, bathroom.urine massKg는 음수, workout.minuteFactor는 분당 감소 계수입니다.</p>
   </section>
 
   <section>
     <table>
-      <thead><tr><th>kind</th><th>key</th><th>label</th><th>mass</th><th>stool</th><th>minute</th><th>order</th><th>active</th><th></th></tr></thead>
+      <thead><tr><th>kind</th><th>key</th><th>label</th><th>description</th><th>unit</th><th>mass</th><th>stool</th><th>minute</th><th>order</th><th>active</th><th></th></tr></thead>
       <tbody id="items"></tbody>
     </table>
   </section>
@@ -331,6 +388,7 @@ const adminHtml = `<!doctype html>
 
 <script>
 let editingId = null;
+let editingMetadata = {};
 let selectedImportFile = null;
 let loadingCount = 0;
 const statusBar = document.getElementById('statusBar');
@@ -380,7 +438,9 @@ async function logout() {
 async function load() {
   const rows = await api('/admin/prediction-config/items?includeInactive=true', { loadingText: 'Loading config...' });
   document.getElementById('items').innerHTML = rows.map(row => '<tr>' +
-    '<td>' + escapeHtml(row.kind) + '</td><td>' + escapeHtml(row.key) + '</td><td>' + escapeHtml(row.label) + '</td><td>' + (row.massKg ?? '') + '</td><td>' + (row.stoolRatio ?? '') + '</td><td>' + (row.minuteFactor ?? '') + '</td><td>' + row.sortOrder + '</td><td>' + row.isActive + '</td>' +
+    '<td>' + escapeHtml(row.kind) + '</td><td>' + escapeHtml(row.key) + '</td><td>' + escapeHtml(row.label) + '</td>' +
+    '<td class="metadata-text">' + escapeHtml((row.metadata && row.metadata.description) || '') + '</td><td>' + escapeHtml((row.metadata && row.metadata.unit) || '') + '</td>' +
+    '<td>' + (row.massKg ?? '') + '</td><td>' + (row.stoolRatio ?? '') + '</td><td>' + (row.minuteFactor ?? '') + '</td><td>' + row.sortOrder + '</td><td>' + row.isActive + '</td>' +
     '<td><button onclick="edit(' + escapeAttribute(JSON.stringify(row)) + ')">Edit</button> <button onclick="removeItem(\\'' + row.id + '\\')">Delete</button></td></tr>'
   ).join('');
   setStatus('Loaded', 'success');
@@ -394,15 +454,32 @@ function escapeAttribute(value) {
 function edit(row) {
   if (typeof row === 'string') row = JSON.parse(row);
   editingId = row.id;
+  editingMetadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
   for (const key of ['kind','key','label','massKg','stoolRatio','minuteFactor','sortOrder']) document.getElementById(key).value = row[key] ?? '';
   document.getElementById('isActive').checked = row.isActive;
+  document.getElementById('metadataDescription').value = editingMetadata.description || '';
+  document.getElementById('metadataSetupText').value = editingMetadata.setupText || '';
+  document.getElementById('metadataInputHint').value = editingMetadata.inputHint || '';
+  document.getElementById('metadataUnit').value = editingMetadata.unit || '';
+  document.getElementById('metadataRequiredInSetup').checked = Boolean(editingMetadata.requiredInSetup);
 }
 function resetForm() {
   editingId = null;
+  editingMetadata = {};
   for (const key of ['key','label','massKg','stoolRatio','minuteFactor','sortOrder']) document.getElementById(key).value = '';
+  for (const key of ['metadataDescription','metadataSetupText','metadataInputHint','metadataUnit']) document.getElementById(key).value = '';
   document.getElementById('isActive').checked = true;
+  document.getElementById('metadataRequiredInSetup').checked = false;
 }
 async function save() {
+  const metadata = {
+    ...editingMetadata,
+    description: document.getElementById('metadataDescription').value.trim(),
+    setupText: document.getElementById('metadataSetupText').value.trim(),
+    inputHint: document.getElementById('metadataInputHint').value.trim(),
+    unit: document.getElementById('metadataUnit').value.trim(),
+    requiredInSetup: document.getElementById('metadataRequiredInSetup').checked
+  };
   const payload = {
     kind: document.getElementById('kind').value,
     key: document.getElementById('key').value.trim(),
@@ -411,7 +488,8 @@ async function save() {
     stoolRatio: nullableNumber('stoolRatio'),
     minuteFactor: nullableNumber('minuteFactor'),
     sortOrder: Number(document.getElementById('sortOrder').value || 0),
-    isActive: document.getElementById('isActive').checked
+    isActive: document.getElementById('isActive').checked,
+    metadata
   };
   await api(editingId ? '/admin/prediction-config/items/' + editingId : '/admin/prediction-config/items', {
     method: editingId ? 'PUT' : 'POST',
