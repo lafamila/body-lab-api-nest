@@ -29,8 +29,9 @@ export class AuthService {
     }
 
     const permission = this.extractPermission(payload);
-    if (permission !== this.config.authRequiredPermission) {
-      throw new UnauthorizedException('body-lab owner permission is required');
+    const deniedPermissions = this.config.authDeniedPermissions.map((entry) => entry.toLowerCase());
+    if (!permission || deniedPermissions.includes(permission.toLowerCase())) {
+      throw new UnauthorizedException('body-lab non-visitor permission is required');
     }
 
     return {

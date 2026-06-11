@@ -59,8 +59,8 @@ export class BodyLabConfigService {
     return this.config.authServiceKey;
   }
 
-  get authRequiredPermission(): string {
-    return this.config.authRequiredPermission;
+  get authDeniedPermissions(): string[] {
+    return this.config.authDeniedPermissions;
   }
 
   get authApiBaseUrl(): string {

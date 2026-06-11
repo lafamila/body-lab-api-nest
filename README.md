@@ -8,7 +8,7 @@ The server is a data and sync hub. It stores events and client-generated predict
 
 - Auth service key: `body-lab`
 - JWT audience: `service:body-lab`
-- Required permission: `owner`
+- Allowed permission: any body-lab permission except `visitor`
 - `visitor` or missing body-lab permission is denied
 - Clients log in through `POST /session/login`; domain routes use the returned body-lab session id
 - Production URL: `https://lab.lafamila.xyz`
@@ -27,7 +27,7 @@ Copy `.env.example` to `.env` and configure:
 - `AUTH_JWKS_URL`: optional direct JWKS URL; if omitted the API uses OIDC discovery from the issuer
 - `AUTH_AUDIENCE`: defaults to `service:body-lab`
 - `AUTH_SERVICE_KEY`: defaults to `body-lab`
-- `AUTH_REQUIRED_PERMISSION`: defaults to `owner`
+- `AUTH_DENIED_PERMISSIONS`: comma-separated denied permission values; defaults to `visitor`
 - `BODY_LAB_OIDC_CLIENT_ID`: auth-api-nest OIDC client id registered for body-lab native clients
 - `BODY_LAB_OIDC_CLIENT_SECRET`: optional client secret when the registered client is confidential
 - `BODY_LAB_OIDC_REDIRECT_URI`: redirect URI registered for the OIDC client

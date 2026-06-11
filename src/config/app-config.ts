@@ -13,7 +13,7 @@ export interface AppConfig {
   authJwksUrl?: string;
   authAudience: string;
   authServiceKey: string;
-  authRequiredPermission: string;
+  authDeniedPermissions: string[];
   authApiBaseUrl: string;
   oidcClientId: string;
   oidcClientSecret?: string;
@@ -42,6 +42,17 @@ function boolFromEnv(name: string, fallback = false): boolean {
   return ['1', 'true', 'yes', 'on'].includes(raw.toLowerCase());
 }
 
+function listFromEnv(name: string, fallback: string[]): string[] {
+  const raw = process.env[name];
+  if (!raw) {
+    return fallback;
+  }
+  return raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
 export function loadAppConfig(): AppConfig {
   return {
     nodeEnv: process.env.NODE_ENV ?? 'development',
@@ -58,7 +69,7 @@ export function loadAppConfig(): AppConfig {
     authJwksUrl: process.env.AUTH_JWKS_URL,
     authAudience: process.env.AUTH_AUDIENCE ?? 'service:body-lab',
     authServiceKey: process.env.AUTH_SERVICE_KEY ?? 'body-lab',
-    authRequiredPermission: process.env.AUTH_REQUIRED_PERMISSION ?? 'owner',
+    authDeniedPermissions: listFromEnv('AUTH_DENIED_PERMISSIONS', ['visitor']),
     authApiBaseUrl: process.env.AUTH_API_BASE_URL ?? process.env.AUTH_ISSUER_URL ?? 'http://localhost:3032',
     oidcClientId: process.env.BODY_LAB_OIDC_CLIENT_ID ?? 'body-lab-mac',
     oidcClientSecret: process.env.BODY_LAB_OIDC_CLIENT_SECRET,

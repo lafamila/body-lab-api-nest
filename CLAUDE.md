@@ -7,7 +7,7 @@ NestJS API server for body-lab: account-scoped diet/body research data storage, 
 ## 워크스페이스 대원칙 (canonical)
 이 레포는 `../CLAUDE.md` 의 **DEVELOPMENT PRINCIPLES** 섹션을 따른다. 핵심 재진술:
 
-1. **인증** — `auth-api-nest` 와 통합한다. serviceKey는 `body-lab`, audience는 `service:body-lab`, 허용 permission은 초기 `owner`다. `visitor`는 no-access로 처리한다.
+1. **인증** — `auth-api-nest` 와 통합한다. serviceKey는 `body-lab`, audience는 `service:body-lab` 이다. body-lab permission 이 존재하고 `visitor` 가 아니면 이용 가능하며, `visitor` 또는 permission 없음은 no-access로 처리한다.
 2. **기능 단위 커밋** — 한 기능이 계획-구현-검토를 통과하면 즉시 1개의 커밋. 여러 기능을 묶지 않는다.
 3. **Agent co-author 제외** — Codex, Claude, OmX 등 agent/tool 저자를 `Co-authored-by` trailer 로 추가하지 않는다. 사용자가 명시적으로 요청한 경우만 예외.
 4. **계획 → 구현 → 검토** — 계획 단계에서 검토 통과 기준(어떤 테스트/명령이 통과해야 "done"인지)을 명시한다.
@@ -32,7 +32,7 @@ NestJS API server for body-lab: account-scoped diet/body research data storage, 
 - Database: PostgreSQL database `body_lab`
 - Realtime: shared Redis, designed for account-scoped sync notifications and future shared use by other services
 - Auth: `AUTH_VIA_AUTH_API_NEST`
-- Permission model: initial `owner`; `visitor` means no access
+- Permission model: any non-`visitor` body-lab permission can use the service; `visitor` means no access
 - Server role: source of truth for account-scoped event data and sync, not the main analytics engine
 - Prediction: store client-generated rule-based v1 prediction snapshots; do not host ML in current scope
 
@@ -60,7 +60,7 @@ docker build -t body-lab-api-nest .
 
 ## Security
 - Never store auth client secrets in native apps. Native clients are public OIDC clients with PKCE.
-- Validate JWT issuer, JWKS signature, expiration, audience `service:body-lab`, service claim key `body-lab`, and permission `owner`.
+- Validate JWT issuer, JWKS signature, expiration, audience `service:body-lab`, service claim key `body-lab`, and reject missing or `visitor` permission.
 - All body-lab data access must be scoped by auth account id.
 - Redis sync payloads should contain minimal identifiers/cursors, not full sensitive health data unless there is a clear need.
 - Never commit `.env`, database URLs, Redis credentials, JWT keys, or production secrets.

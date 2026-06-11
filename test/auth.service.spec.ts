@@ -16,7 +16,7 @@ function config(): BodyLabConfigService {
     authIssuerUrl: 'https://auth.example.test',
     authAudience: 'service:body-lab',
     authServiceKey: 'body-lab',
-    authRequiredPermission: 'owner',
+    authDeniedPermissions: ['visitor'],
     authApiBaseUrl: 'https://auth.example.test',
     oidcClientId: 'body-lab-mac',
     oidcRedirectUri: 'bodylab-mac://auth/callback',
@@ -38,6 +38,20 @@ describe('AuthService', () => {
 
     expect(account.accountId).toBe('account-1');
     expect(account.permission).toBe('owner');
+  });
+
+  it('accepts non-visitor permission for the body-lab service claim', () => {
+    const service = new AuthService(config());
+
+    const account = service.validatePayload({
+      iss: 'https://auth.example.test',
+      aud: 'service:body-lab',
+      sub: 'account-1',
+      'body-lab': 'member',
+    });
+
+    expect(account.accountId).toBe('account-1');
+    expect(account.permission).toBe('member');
   });
 
   it('rejects visitor permission', () => {

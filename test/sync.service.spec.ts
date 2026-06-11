@@ -17,7 +17,7 @@ describe('SyncService', () => {
         authIssuerUrl: 'https://auth.example.test',
         authAudience: 'service:body-lab',
         authServiceKey: 'body-lab',
-        authRequiredPermission: 'owner',
+        authDeniedPermissions: ['visitor'],
         authApiBaseUrl: 'https://auth.example.test',
         oidcClientId: 'body-lab-mac',
         oidcRedirectUri: 'bodylab-mac://auth/callback',
