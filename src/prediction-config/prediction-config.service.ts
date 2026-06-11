@@ -32,6 +32,12 @@ export class PredictionConfigService {
     return item;
   }
 
+  async replaceAll(payloads: UpsertPredictionConfigItemDto[]): Promise<PredictionConfigItemDto[]> {
+    const items = await this.repository.replaceAll(payloads);
+    await this.publishConfig();
+    return items;
+  }
+
   private async publishConfig(): Promise<void> {
     await this.sync.publishPredictionConfig(await this.list(false));
   }

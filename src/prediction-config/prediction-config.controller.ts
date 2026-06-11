@@ -1,17 +1,34 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query, Res, Sse, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Put, Query, Res, Sse, UseGuards } from '@nestjs/common';
+import { IsInt, IsObject, IsOptional, Min } from 'class-validator';
 import { Response } from 'express';
 import { Observable } from 'rxjs';
 import { AuthAccountParam } from '../auth/auth-account.decorator';
 import { AuthAccount } from '../auth/auth.types';
 import { BodyLabSessionGuard } from '../auth/body-lab-session.guard';
+import { ExportImportService } from '../export-import/export-import.service';
 import { PredictionConfigServerSentMessage, SyncService } from '../sync/sync.service';
-import { UpsertPredictionConfigItemDto } from './dto';
+import { PredictionConfigKind, PredictionConfigItemDto, UpsertPredictionConfigItemDto } from './dto';
 import { PredictionConfigService } from './prediction-config.service';
+
+class ImportBodyLabAdminBackupDto {
+  @IsInt()
+  @Min(1)
+  schemaVersion!: number;
+
+  @IsOptional()
+  @IsObject()
+  config?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsObject()
+  data?: Record<string, unknown>;
+}
 
 @Controller()
 export class PredictionConfigController {
   constructor(
     private readonly service: PredictionConfigService,
+    private readonly exportImportService: ExportImportService,
     private readonly sync: SyncService,
   ) {}
 
@@ -19,6 +36,11 @@ export class PredictionConfigController {
   @Get('prediction-config')
   listForClient(@AuthAccountParam() _account: AuthAccount) {
     return this.service.list(false);
+  }
+
+  @Get('admin/login')
+  adminLogin(@Res() response: Response) {
+    response.type('html').send(loginHtml);
   }
 
   @Get('admin')
@@ -30,6 +52,49 @@ export class PredictionConfigController {
   @Sse('prediction-config/events')
   events(@AuthAccountParam() _account: AuthAccount): Observable<PredictionConfigServerSentMessage> {
     return this.sync.streamPredictionConfig();
+  }
+
+  @UseGuards(BodyLabSessionGuard)
+  @Get('admin/export')
+  async exportAdminBackup(@AuthAccountParam() account: AuthAccount) {
+    const [personalData, predictionConfig] = await Promise.all([
+      this.exportImportService.export(account.accountId),
+      this.service.list(true),
+    ]);
+    return {
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      config: {
+        predictionConfig,
+      },
+      data: personalData.data,
+    };
+  }
+
+  @UseGuards(BodyLabSessionGuard)
+  @Post('admin/import')
+  async importAdminBackup(@AuthAccountParam() account: AuthAccount, @Body() body: ImportBodyLabAdminBackupDto) {
+    if (!body.config && !body.data) {
+      throw new BadRequestException('Import payload must include config or data');
+    }
+
+    const result: Record<string, unknown> = {};
+    if (body.config) {
+      const predictionConfig = this.normalizePredictionConfig(body.config.predictionConfig);
+      result.predictionConfig = (await this.service.replaceAll(predictionConfig)).length;
+    }
+    if (body.data) {
+      result.personalData = await this.exportImportService.import(account.accountId, {
+        schemaVersion: body.schemaVersion,
+        data: body.data,
+      });
+    }
+
+    return {
+      schemaVersion: 1,
+      importedAt: new Date().toISOString(),
+      imported: result,
+    };
   }
 
   @UseGuards(BodyLabSessionGuard)
@@ -55,7 +120,140 @@ export class PredictionConfigController {
   delete(@Param('id') id: string) {
     return this.service.delete(id);
   }
+
+  private normalizePredictionConfig(value: unknown): UpsertPredictionConfigItemDto[] {
+    if (!Array.isArray(value)) {
+      throw new BadRequestException('config.predictionConfig must be an array');
+    }
+
+    return value.map((item, index) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        throw new BadRequestException(`config.predictionConfig[${index}] must be an object`);
+      }
+      const record = item as Partial<PredictionConfigItemDto>;
+      if (!this.isPredictionConfigKind(record.kind)) {
+        throw new BadRequestException(`config.predictionConfig[${index}].kind is invalid`);
+      }
+      if (!record.key || !/^[a-z][a-z0-9_]*$/.test(record.key)) {
+        throw new BadRequestException(`config.predictionConfig[${index}].key is invalid`);
+      }
+      if (!record.label) {
+        throw new BadRequestException(`config.predictionConfig[${index}].label is required`);
+      }
+      return {
+        kind: record.kind,
+        key: record.key,
+        label: record.label,
+        massKg: record.massKg ?? null,
+        stoolRatio: record.stoolRatio ?? null,
+        minuteFactor: record.minuteFactor ?? null,
+        sortOrder: record.sortOrder ?? 0,
+        isActive: record.isActive ?? true,
+      };
+    });
+  }
+
+  private isPredictionConfigKind(value: unknown): value is PredictionConfigKind {
+    return value === 'global' || value === 'meal' || value === 'drink' || value === 'bathroom' || value === 'workout';
+  }
 }
+
+const baseStyle = `
+  :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  body { margin: 0; background: #050505; color: #f4f4f5; }
+  main { max-width: 1120px; margin: 0 auto; padding: 24px; }
+  h1 { margin: 0 0 18px; font-size: 22px; }
+  h2 { margin: 0 0 10px; font-size: 15px; color: #e4e4e7; }
+  section { border: 1px solid #27272a; border-radius: 8px; padding: 14px; margin: 14px 0; background: #0a0a0a; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  input, select, button { border: 1px solid #3f3f46; border-radius: 6px; background: #111113; color: #f4f4f5; padding: 7px 8px; font-size: 13px; }
+  button { cursor: pointer; }
+  button:disabled { cursor: default; opacity: .55; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { border-bottom: 1px solid #27272a; padding: 8px; text-align: left; }
+  th { color: #a1a1aa; font-weight: 500; }
+  .number { width: 88px; }
+  .key { width: 130px; }
+  .label { width: 140px; }
+  .status { color: #a1a1aa; font-size: 12px; }
+  .error { color: #f87171; }
+  .success { color: #4ade80; }
+  .toolbar { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+  .status-bar { min-height: 18px; margin: 8px 0 0; color: #a1a1aa; font-size: 12px; }
+  .loading::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 50%; border: 2px solid #52525b; border-top-color: #f4f4f5; animation: spin .8s linear infinite; vertical-align: -2px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .modal-backdrop { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.7); padding: 24px; }
+  .modal-backdrop.open { display: flex; }
+  .modal { width: min(560px, 100%); border: 1px solid #3f3f46; border-radius: 8px; background: #09090b; padding: 16px; }
+  .dropzone { border: 1px dashed #52525b; border-radius: 8px; padding: 24px; text-align: center; color: #a1a1aa; }
+  .dropzone.dragging { border-color: #f4f4f5; color: #f4f4f5; }
+`;
+
+const loginHtml = `<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>body-lab admin login</title>
+  <style>${baseStyle}</style>
+</head>
+<body>
+<main>
+  <h1>body-lab admin</h1>
+  <section>
+    <h2>Login</h2>
+    <form id="loginForm" class="row">
+      <input id="loginId" placeholder="ID" autocomplete="username">
+      <input id="password" placeholder="Password" type="password" autocomplete="current-password">
+      <button id="loginButton" type="submit">Login</button>
+    </form>
+    <div id="statusBar" class="status-bar"></div>
+  </section>
+</main>
+<script>
+const statusBar = document.getElementById('statusBar');
+let loadingCount = 0;
+function setStatus(message, className) {
+  statusBar.textContent = message || '';
+  statusBar.className = 'status-bar ' + (className || '');
+}
+function beginLoading(message) {
+  loadingCount += 1;
+  setStatus(message, 'loading');
+  document.getElementById('loginButton').disabled = true;
+}
+function endLoading() {
+  loadingCount = Math.max(0, loadingCount - 1);
+  if (loadingCount === 0) document.getElementById('loginButton').disabled = false;
+}
+async function api(path, options = {}) {
+  beginLoading('Loading...');
+  try {
+    const response = await fetch(path, { headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options });
+    if (!response.ok) throw new Error(await response.text());
+    return response.json();
+  } finally {
+    endLoading();
+  }
+}
+document.getElementById('loginForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  setStatus('');
+  try {
+    const loginId = document.getElementById('loginId').value;
+    const password = document.getElementById('password').value;
+    await api('/session/login', { method: 'POST', body: JSON.stringify({ loginId, password, clientKind: 'mac', clientInstanceId: 'admin-console', deviceName: 'admin' }) });
+    window.location.href = '/admin';
+  } catch (error) {
+    setStatus('Login failed', 'error');
+  }
+});
+fetch('/session/me').then((response) => {
+  if (response.ok) window.location.href = '/admin';
+}).catch(() => {});
+</script>
+</body>
+</html>`;
 
 const adminHtml = `<!doctype html>
 <html lang="ko">
@@ -63,36 +261,27 @@ const adminHtml = `<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>body-lab admin</title>
-  <style>
-    :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    body { margin: 0; background: #050505; color: #f4f4f5; }
-    main { max-width: 1120px; margin: 0 auto; padding: 24px; }
-    h1 { margin: 0 0 18px; font-size: 22px; }
-    section { border: 1px solid #27272a; border-radius: 8px; padding: 14px; margin: 14px 0; background: #0a0a0a; }
-    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    input, select, button { border: 1px solid #3f3f46; border-radius: 6px; background: #111113; color: #f4f4f5; padding: 7px 8px; font-size: 13px; }
-    button { cursor: pointer; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { border-bottom: 1px solid #27272a; padding: 8px; text-align: left; }
-    th { color: #a1a1aa; font-weight: 500; }
-    .number { width: 88px; }
-    .key { width: 130px; }
-    .label { width: 140px; }
-    .status { color: #a1a1aa; font-size: 12px; }
-  </style>
+  <style>${baseStyle}</style>
 </head>
 <body>
 <main>
-  <h1>body-lab admin</h1>
-  <section id="login">
-    <div class="row">
-      <input id="loginId" placeholder="ID" autocomplete="username">
-      <input id="password" placeholder="Password" type="password" autocomplete="current-password">
-      <button onclick="login()">Login</button>
-      <span class="status" id="loginStatus"></span>
-    </div>
-  </section>
+  <div class="toolbar">
+    <h1>body-lab admin</h1>
+    <button onclick="logout()">Logout</button>
+  </div>
+  <div id="statusBar" class="status-bar"></div>
+
   <section>
+    <h2>Backup</h2>
+    <div class="row">
+      <button onclick="exportBackup()">Export JSON</button>
+      <button onclick="openImportModal()">Import JSON</button>
+    </div>
+    <p class="status">config와 로그인 계정의 개인 기록 데이터를 함께 내보내고 불러옵니다.</p>
+  </section>
+
+  <section>
+    <h2>Prediction config</h2>
     <div class="row">
       <select id="kind">
         <option value="meal">meal</option>
@@ -112,8 +301,9 @@ const adminHtml = `<!doctype html>
       <button onclick="resetForm()">New</button>
       <button onclick="load()">Refresh</button>
     </div>
-    <p class="status">meal.massKg는 1인분 입력시 더해질 무게, meal.stoolRatio는 전날 식사가 대변 무게로 전환되는 비율입니다. drink.massKg는 기록 amount 1당 더해질 무게, bathroom.urine massKg는 음수, workout.minuteFactor는 분당 감소 계수입니다. global.massKg는 fasting/steps/clamp 계수입니다.</p>
+    <p class="status">meal.massKg는 1인분 입력시 더해질 무게, meal.stoolRatio는 대변 배출 비율입니다. drink.massKg는 amount 1당 더해질 무게, bathroom.urine massKg는 음수, workout.minuteFactor는 분당 감소 계수입니다.</p>
   </section>
+
   <section>
     <table>
       <thead><tr><th>kind</th><th>key</th><th>label</th><th>mass</th><th>stool</th><th>minute</th><th>order</th><th>active</th><th></th></tr></thead>
@@ -121,33 +311,88 @@ const adminHtml = `<!doctype html>
     </table>
   </section>
 </main>
+
+<div id="importModal" class="modal-backdrop" role="dialog" aria-modal="true">
+  <div class="modal">
+    <div class="toolbar">
+      <h2>Import JSON</h2>
+      <button onclick="closeImportModal()">Close</button>
+    </div>
+    <div id="dropzone" class="dropzone">
+      <p>JSON 파일을 선택하거나 여기로 드래그하세요.</p>
+      <input id="importFile" type="file" accept="application/json,.json">
+    </div>
+    <div class="row" style="margin-top: 12px;">
+      <button id="importButton" onclick="importBackup()" disabled>Import</button>
+      <span id="importFileName" class="status"></span>
+    </div>
+  </div>
+</div>
+
 <script>
 let editingId = null;
+let selectedImportFile = null;
+let loadingCount = 0;
+const statusBar = document.getElementById('statusBar');
+
+function setStatus(message, className) {
+  statusBar.textContent = message || '';
+  statusBar.className = 'status-bar ' + (className || '');
+}
+function beginLoading(message) {
+  loadingCount += 1;
+  setStatus(message || 'Loading...', 'loading');
+  document.querySelectorAll('button').forEach((button) => button.disabled = true);
+}
+function endLoading() {
+  loadingCount = Math.max(0, loadingCount - 1);
+  if (loadingCount === 0) {
+    document.querySelectorAll('button').forEach((button) => button.disabled = false);
+    document.getElementById('importButton').disabled = !selectedImportFile;
+  }
+}
 function nullableNumber(id) {
   const value = document.getElementById(id).value.trim();
   return value === '' ? null : Number(value);
 }
 async function api(path, options = {}) {
-  const response = await fetch(path, { headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options });
-  if (!response.ok) throw new Error(await response.text());
-  return response.json();
+  beginLoading(options.loadingText || 'Loading...');
+  try {
+    const response = await fetch(path, { headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options });
+    if (response.status === 401) {
+      window.location.href = '/admin/login';
+      throw new Error('Unauthorized');
+    }
+    if (!response.ok) throw new Error(await response.text());
+    return response.json();
+  } finally {
+    endLoading();
+  }
 }
-async function login() {
-  const loginId = document.getElementById('loginId').value;
-  const password = document.getElementById('password').value;
-  await api('/session/login', { method: 'POST', body: JSON.stringify({ loginId, password, clientKind: 'mac', clientInstanceId: 'admin-console', deviceName: 'admin' }) });
-  document.getElementById('password').value = '';
-  document.getElementById('loginStatus').textContent = 'Logged in';
-  await load();
+async function assertLoggedIn() {
+  const response = await fetch('/session/me');
+  if (!response.ok) window.location.href = '/admin/login';
+}
+async function logout() {
+  await api('/session/logout', { method: 'POST', body: JSON.stringify({}), loadingText: 'Logging out...' });
+  window.location.href = '/admin/login';
 }
 async function load() {
-  const rows = await api('/admin/prediction-config/items?includeInactive=true');
+  const rows = await api('/admin/prediction-config/items?includeInactive=true', { loadingText: 'Loading config...' });
   document.getElementById('items').innerHTML = rows.map(row => '<tr>' +
-    '<td>' + row.kind + '</td><td>' + row.key + '</td><td>' + row.label + '</td><td>' + (row.massKg ?? '') + '</td><td>' + (row.stoolRatio ?? '') + '</td><td>' + (row.minuteFactor ?? '') + '</td><td>' + row.sortOrder + '</td><td>' + row.isActive + '</td>' +
-    '<td><button onclick="edit(' + JSON.stringify(row).replaceAll('"', '&quot;') + ')">Edit</button> <button onclick="removeItem(\\'' + row.id + '\\')">Delete</button></td></tr>'
+    '<td>' + escapeHtml(row.kind) + '</td><td>' + escapeHtml(row.key) + '</td><td>' + escapeHtml(row.label) + '</td><td>' + (row.massKg ?? '') + '</td><td>' + (row.stoolRatio ?? '') + '</td><td>' + (row.minuteFactor ?? '') + '</td><td>' + row.sortOrder + '</td><td>' + row.isActive + '</td>' +
+    '<td><button onclick="edit(' + escapeAttribute(JSON.stringify(row)) + ')">Edit</button> <button onclick="removeItem(\\'' + row.id + '\\')">Delete</button></td></tr>'
   ).join('');
+  setStatus('Loaded', 'success');
+}
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+}
+function escapeAttribute(value) {
+  return "'" + escapeHtml(value) + "'";
 }
 function edit(row) {
+  if (typeof row === 'string') row = JSON.parse(row);
   editingId = row.id;
   for (const key of ['kind','key','label','massKg','stoolRatio','minuteFactor','sortOrder']) document.getElementById(key).value = row[key] ?? '';
   document.getElementById('isActive').checked = row.isActive;
@@ -168,15 +413,69 @@ async function save() {
     sortOrder: Number(document.getElementById('sortOrder').value || 0),
     isActive: document.getElementById('isActive').checked
   };
-  await api(editingId ? '/admin/prediction-config/items/' + editingId : '/admin/prediction-config/items', { method: editingId ? 'PUT' : 'POST', body: JSON.stringify(payload) });
+  await api(editingId ? '/admin/prediction-config/items/' + editingId : '/admin/prediction-config/items', {
+    method: editingId ? 'PUT' : 'POST',
+    body: JSON.stringify(payload),
+    loadingText: 'Saving config...'
+  });
   resetForm();
   await load();
 }
 async function removeItem(id) {
-  await api('/admin/prediction-config/items/' + id, { method: 'DELETE' });
+  await api('/admin/prediction-config/items/' + id, { method: 'DELETE', loadingText: 'Deleting config...' });
   await load();
 }
-load().catch(() => {});
+async function exportBackup() {
+  const backup = await api('/admin/export', { loadingText: 'Exporting JSON...' });
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'body-lab-export-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(link.href);
+  setStatus('Exported', 'success');
+}
+function openImportModal() {
+  document.getElementById('importModal').classList.add('open');
+}
+function closeImportModal() {
+  document.getElementById('importModal').classList.remove('open');
+}
+function setImportFile(file) {
+  selectedImportFile = file;
+  document.getElementById('importButton').disabled = !file;
+  document.getElementById('importFileName').textContent = file ? file.name : '';
+}
+async function importBackup() {
+  if (!selectedImportFile) return;
+  const text = await selectedImportFile.text();
+  const payload = JSON.parse(text);
+  await api('/admin/import', { method: 'POST', body: JSON.stringify(payload), loadingText: 'Importing JSON...' });
+  closeImportModal();
+  setImportFile(null);
+  await load();
+  setStatus('Imported', 'success');
+}
+document.getElementById('importFile').addEventListener('change', (event) => {
+  setImportFile(event.target.files && event.target.files[0] ? event.target.files[0] : null);
+});
+const dropzone = document.getElementById('dropzone');
+dropzone.addEventListener('dragover', (event) => {
+  event.preventDefault();
+  dropzone.classList.add('dragging');
+});
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragging'));
+dropzone.addEventListener('drop', (event) => {
+  event.preventDefault();
+  dropzone.classList.remove('dragging');
+  setImportFile(event.dataTransfer.files && event.dataTransfer.files[0] ? event.dataTransfer.files[0] : null);
+});
+
+assertLoggedIn().then(load).catch(() => {
+  window.location.href = '/admin/login';
+});
 </script>
 </body>
 </html>`;

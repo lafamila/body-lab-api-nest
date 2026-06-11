@@ -100,6 +100,51 @@ export class PredictionConfigRepository {
     return this.toDto(result.rows[0]);
   }
 
+  async replaceAll(payloads: UpsertPredictionConfigItemDto[]): Promise<PredictionConfigItemDto[]> {
+    return this.database.transaction(async (query) => {
+      await query(
+        `
+          update prediction_config_items
+          set deleted_at = now(), is_active = false, updated_at = now()
+          where deleted_at is null
+        `,
+      );
+
+      const rows: PredictionConfigItemDto[] = [];
+      for (const payload of payloads) {
+        const result = await query(
+          `
+            insert into prediction_config_items
+              (kind, key, label, mass_kg, stool_ratio, minute_factor, sort_order, is_active)
+            values ($1, $2, $3, $4, $5, $6, $7, $8)
+            on conflict (kind, key) do update set
+              label = excluded.label,
+              mass_kg = excluded.mass_kg,
+              stool_ratio = excluded.stool_ratio,
+              minute_factor = excluded.minute_factor,
+              sort_order = excluded.sort_order,
+              is_active = excluded.is_active,
+              deleted_at = null,
+              updated_at = now()
+            returning *
+          `,
+          [
+            payload.kind,
+            payload.key,
+            payload.label,
+            payload.massKg ?? null,
+            payload.stoolRatio ?? null,
+            payload.minuteFactor ?? null,
+            payload.sortOrder ?? 0,
+            payload.isActive ?? true,
+          ],
+        );
+        rows.push(this.toDto(result.rows[0]));
+      }
+      return rows;
+    });
+  }
+
   private toDto(row: Record<string, unknown>): PredictionConfigItemDto {
     return {
       id: String(row.id),
