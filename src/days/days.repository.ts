@@ -3,7 +3,6 @@ import { DatabaseService } from '../database/database.service';
 
 export interface DaySnapshot {
   date: string;
-  checkin: Record<string, unknown> | null;
   weight: Record<string, unknown> | null;
   meals: Record<string, unknown>[];
   drinks: Record<string, unknown>[];
@@ -16,12 +15,6 @@ export interface DaySnapshot {
 export interface UpsertDayPayload {
   morningWeightKg?: number;
   morningWeightMeasuredAt?: string;
-  noMeals?: boolean;
-  lastMealAt?: string | null;
-  lastMealCategory?: string | null;
-  lastMealPortion?: number | null;
-  note?: string | null;
-  metadata?: Record<string, unknown>;
 }
 
 @Injectable()
@@ -30,8 +23,7 @@ export class DaysRepository {
 
   async getDay(accountId: string, localDate: string): Promise<DaySnapshot> {
     const [start, end] = this.bounds(localDate);
-    const [checkin, weights, meals, drinks, bathroom, manualWorkouts, healthImports, predictions] = await Promise.all([
-      this.database.query('select * from daily_checkins where account_id = $1 and local_date = $2', [accountId, localDate]),
+    const [weights, meals, drinks, bathroom, manualWorkouts, healthImports, predictions] = await Promise.all([
       this.database.query(
         `
           select *
@@ -59,7 +51,6 @@ export class DaysRepository {
 
     return {
       date: localDate,
-      checkin: checkin.rows[0] ? this.toApi(checkin.rows[0]) : null,
       weight: weights.rows[0] ? this.toApi(weights.rows[0]) : null,
       meals: meals.rows.map((row) => this.toApi(row)),
       drinks: drinks.rows.map((row) => this.toApi(row)),
@@ -72,41 +63,6 @@ export class DaysRepository {
 
   async upsertDay(accountId: string, localDate: string, payload: UpsertDayPayload): Promise<DaySnapshot> {
     await this.database.transaction(async (query) => {
-      if (
-        typeof payload.noMeals !== 'undefined' ||
-        typeof payload.lastMealAt !== 'undefined' ||
-        typeof payload.lastMealCategory !== 'undefined' ||
-        typeof payload.lastMealPortion !== 'undefined' ||
-        typeof payload.note !== 'undefined' ||
-        typeof payload.metadata !== 'undefined'
-      ) {
-        await query(
-          `
-            insert into daily_checkins
-              (account_id, local_date, no_meals, last_meal_at, last_meal_category, last_meal_portion, note, metadata)
-            values ($1, $2, coalesce($3, false), $4, $5, $6, $7, coalesce($8, '{}'::jsonb))
-            on conflict (account_id, local_date) do update set
-              no_meals = coalesce(excluded.no_meals, daily_checkins.no_meals),
-              last_meal_at = excluded.last_meal_at,
-              last_meal_category = excluded.last_meal_category,
-              last_meal_portion = excluded.last_meal_portion,
-              note = excluded.note,
-              metadata = coalesce(excluded.metadata, daily_checkins.metadata),
-              updated_at = now()
-          `,
-          [
-            accountId,
-            localDate,
-            payload.noMeals,
-            payload.lastMealAt ?? null,
-            payload.lastMealCategory ?? null,
-            payload.lastMealPortion ?? null,
-            payload.note ?? null,
-            JSON.stringify(payload.metadata ?? {}),
-          ],
-        );
-      }
-
       if (typeof payload.morningWeightKg !== 'undefined') {
         const measuredAt = payload.morningWeightMeasuredAt ?? `${localDate}T07:00:00.000Z`;
         await query(
@@ -150,10 +106,6 @@ export class DaysRepository {
     return {
       id: row.id,
       date: row.local_date,
-      noMeals: row.no_meals,
-      lastMealAt: row.last_meal_at,
-      lastMealCategory: row.last_meal_category,
-      lastMealPortion: row.last_meal_portion === undefined || row.last_meal_portion === null ? undefined : Number(row.last_meal_portion),
       measuredAt: row.measured_at,
       valueKg: row.value_kg === undefined ? undefined : Number(row.value_kg),
       occurredAt: row.occurred_at,
