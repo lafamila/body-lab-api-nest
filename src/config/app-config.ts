@@ -65,7 +65,7 @@ export function loadAppConfig(): AppConfig {
     databaseSsl: boolFromEnv('DATABASE_SSL', false),
     redisUrl: process.env.REDIS_URL,
     redisKeyPrefix: process.env.REDIS_KEY_PREFIX ?? 'body-lab',
-    authIssuerUrl: process.env.AUTH_ISSUER_URL ?? 'http://localhost:3000',
+    authIssuerUrl: process.env.AUTH_ISSUER_URL ?? 'http://localhost:3032',
     authJwksUrl: process.env.AUTH_JWKS_URL,
     authAudience: process.env.AUTH_AUDIENCE ?? 'service:body-lab',
     authServiceKey: process.env.AUTH_SERVICE_KEY ?? 'body-lab',
