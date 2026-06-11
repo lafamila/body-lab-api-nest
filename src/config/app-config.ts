@@ -53,6 +53,11 @@ function listFromEnv(name: string, fallback: string[]): string[] {
     .filter((entry) => entry.length > 0);
 }
 
+function localDatabaseUrl(): string {
+  const user = process.env.USER || process.env.LOGNAME || 'body_lab';
+  return `postgres://${encodeURIComponent(user)}@localhost:5432/body_lab`;
+}
+
 export function loadAppConfig(): AppConfig {
   return {
     nodeEnv: process.env.NODE_ENV ?? 'development',
@@ -61,7 +66,7 @@ export function loadAppConfig(): AppConfig {
     publicBaseUrl: process.env.PUBLIC_BASE_URL ?? 'http://localhost:3020',
     lanBaseUrl: process.env.LAN_BASE_URL,
     productionBaseUrl: process.env.PRODUCTION_BASE_URL ?? 'https://lab.lafamila.xyz',
-    databaseUrl: process.env.DATABASE_URL ?? 'postgres://body_lab:body_lab@localhost:5432/body_lab',
+    databaseUrl: process.env.DATABASE_URL ?? localDatabaseUrl(),
     databaseSsl: boolFromEnv('DATABASE_SSL', false),
     redisUrl: process.env.REDIS_URL,
     redisKeyPrefix: process.env.REDIS_KEY_PREFIX ?? 'body-lab',
