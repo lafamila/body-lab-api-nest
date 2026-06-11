@@ -68,7 +68,7 @@ export function loadAppConfig(): AppConfig {
     productionBaseUrl: process.env.PRODUCTION_BASE_URL ?? 'https://lab.lafamila.xyz',
     databaseUrl: process.env.DATABASE_URL ?? localDatabaseUrl(),
     databaseSsl: boolFromEnv('DATABASE_SSL', false),
-    redisUrl: process.env.REDIS_URL,
+    redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379/0',
     redisKeyPrefix: process.env.REDIS_KEY_PREFIX ?? 'body-lab',
     authIssuerUrl: process.env.AUTH_ISSUER_URL ?? 'http://localhost:3032',
     authJwksUrl: process.env.AUTH_JWKS_URL,

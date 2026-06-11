@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import Redis from 'ioredis';
-import { Observable } from 'rxjs';
+import { Observable, Subject } from 'rxjs';
 import { BodyLabConfigService } from '../config/config.service';
 
 export interface SyncNotification {
@@ -35,6 +35,8 @@ export interface PredictionConfigServerSentMessage {
 export class SyncService implements OnModuleDestroy {
   private readonly logger = new Logger(SyncService.name);
   private readonly publisher?: Redis;
+  private readonly localSyncStreams = new Map<string, Subject<ServerSentMessage>>();
+  private readonly localPredictionConfigStreams = new Map<string, Subject<PredictionConfigServerSentMessage>>();
 
   constructor(private readonly config: BodyLabConfigService) {
     if (this.config.redisUrl) {
@@ -51,10 +53,6 @@ export class SyncService implements OnModuleDestroy {
     action: SyncNotification['action'],
     row: Record<string, unknown>,
   ): Promise<void> {
-    if (!this.publisher) {
-      return;
-    }
-
     const payload: SyncNotification = {
       accountHash: this.accountHash(accountId),
       resource,
@@ -63,6 +61,11 @@ export class SyncService implements OnModuleDestroy {
       cursor: String(row.updatedAt ?? row.updated_at ?? new Date().toISOString()),
       updatedAt: row.updatedAt ?? row.updated_at,
     };
+
+    if (!this.publisher) {
+      this.localSyncSubject(accountId).next({ type: 'sync', data: payload });
+      return;
+    }
 
     try {
       await this.publisher.connect().catch((error: Error & { message?: string }) => {
@@ -77,10 +80,6 @@ export class SyncService implements OnModuleDestroy {
   }
 
   async publishPredictionConfig(accountId: string, items: unknown[]): Promise<void> {
-    if (!this.publisher) {
-      return;
-    }
-
     const payload: PredictionConfigNotification = {
       accountHash: this.accountHash(accountId),
       resource: 'prediction-config',
@@ -88,6 +87,11 @@ export class SyncService implements OnModuleDestroy {
       cursor: new Date().toISOString(),
       items,
     };
+
+    if (!this.publisher) {
+      this.localPredictionConfigSubject(accountId).next({ type: 'prediction-config', data: payload });
+      return;
+    }
 
     try {
       await this.publisher.connect().catch((error: Error & { message?: string }) => {
@@ -114,7 +118,8 @@ export class SyncService implements OnModuleDestroy {
             items: [],
           },
         });
-        return undefined;
+        const subscription = this.localPredictionConfigSubject(accountId).subscribe((event) => subscriber.next(event));
+        return () => subscription.unsubscribe();
       }
 
       const redis = new Redis(this.config.redisUrl, {
@@ -150,7 +155,8 @@ export class SyncService implements OnModuleDestroy {
             cursor: new Date().toISOString(),
           },
         });
-        return undefined;
+        const subscription = this.localSyncSubject(accountId).subscribe((event) => subscriber.next(event));
+        return () => subscription.unsubscribe();
       }
 
       const redis = new Redis(this.config.redisUrl, {
@@ -189,5 +195,25 @@ export class SyncService implements OnModuleDestroy {
 
   private predictionConfigChannel(accountId: string): string {
     return `prediction-config:${this.accountHash(accountId)}`;
+  }
+
+  private localSyncSubject(accountId: string): Subject<ServerSentMessage> {
+    const channel = this.channel(accountId);
+    let subject = this.localSyncStreams.get(channel);
+    if (!subject) {
+      subject = new Subject<ServerSentMessage>();
+      this.localSyncStreams.set(channel, subject);
+    }
+    return subject;
+  }
+
+  private localPredictionConfigSubject(accountId: string): Subject<PredictionConfigServerSentMessage> {
+    const channel = this.predictionConfigChannel(accountId);
+    let subject = this.localPredictionConfigStreams.get(channel);
+    if (!subject) {
+      subject = new Subject<PredictionConfigServerSentMessage>();
+      this.localPredictionConfigStreams.set(channel, subject);
+    }
+    return subject;
   }
 }

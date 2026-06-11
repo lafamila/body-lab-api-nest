@@ -65,6 +65,25 @@ export class DaysRepository {
     await this.database.transaction(async (query) => {
       if (typeof payload.morningWeightKg !== 'undefined') {
         const measuredAt = payload.morningWeightMeasuredAt ?? `${localDate}T07:00:00.000Z`;
+        const clientEventId = `daily-weight:${localDate}`;
+        const existingDailyWeight = await query(
+          `
+            update body_weight_logs
+            set measured_at = $2,
+                value_kg = $3,
+                source = 'manual',
+                updated_at = now(),
+                deleted_at = null
+            where account_id = $1
+              and client_event_id = $4
+            returning *
+          `,
+          [accountId, measuredAt, payload.morningWeightKg, clientEventId],
+        );
+        if (existingDailyWeight.rowCount) {
+          return;
+        }
+
         const [start, end] = this.bounds(localDate);
         const updated = await query(
           `
@@ -72,7 +91,7 @@ export class DaysRepository {
             set measured_at = $4,
                 value_kg = $5,
                 source = 'manual',
-                client_event_id = coalesce(client_event_id, $6),
+                client_event_id = $6,
                 updated_at = now(),
                 deleted_at = null
             where account_id = $1
@@ -81,7 +100,7 @@ export class DaysRepository {
               and deleted_at is null
             returning *
           `,
-          [accountId, start, end, measuredAt, payload.morningWeightKg, `daily-weight:${localDate}`],
+          [accountId, start, end, measuredAt, payload.morningWeightKg, clientEventId],
         );
         if (!updated.rowCount) {
           await query(
@@ -89,7 +108,7 @@ export class DaysRepository {
               insert into body_weight_logs (account_id, measured_at, value_kg, source, client_event_id)
               values ($1, $2, $3, 'manual', $4)
             `,
-            [accountId, measuredAt, payload.morningWeightKg, `daily-weight:${localDate}`],
+            [accountId, measuredAt, payload.morningWeightKg, clientEventId],
           );
         }
       }
