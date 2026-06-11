@@ -18,6 +18,8 @@ export interface UpsertDayPayload {
   morningWeightMeasuredAt?: string;
   noMeals?: boolean;
   lastMealAt?: string | null;
+  lastMealCategory?: string | null;
+  lastMealPortion?: number | null;
   note?: string | null;
   metadata?: Record<string, unknown>;
 }
@@ -73,16 +75,21 @@ export class DaysRepository {
       if (
         typeof payload.noMeals !== 'undefined' ||
         typeof payload.lastMealAt !== 'undefined' ||
+        typeof payload.lastMealCategory !== 'undefined' ||
+        typeof payload.lastMealPortion !== 'undefined' ||
         typeof payload.note !== 'undefined' ||
         typeof payload.metadata !== 'undefined'
       ) {
         await query(
           `
-            insert into daily_checkins (account_id, local_date, no_meals, last_meal_at, note, metadata)
-            values ($1, $2, coalesce($3, false), $4, $5, coalesce($6, '{}'::jsonb))
+            insert into daily_checkins
+              (account_id, local_date, no_meals, last_meal_at, last_meal_category, last_meal_portion, note, metadata)
+            values ($1, $2, coalesce($3, false), $4, $5, $6, $7, coalesce($8, '{}'::jsonb))
             on conflict (account_id, local_date) do update set
               no_meals = coalesce(excluded.no_meals, daily_checkins.no_meals),
               last_meal_at = excluded.last_meal_at,
+              last_meal_category = excluded.last_meal_category,
+              last_meal_portion = excluded.last_meal_portion,
               note = excluded.note,
               metadata = coalesce(excluded.metadata, daily_checkins.metadata),
               updated_at = now()
@@ -92,6 +99,8 @@ export class DaysRepository {
             localDate,
             payload.noMeals,
             payload.lastMealAt ?? null,
+            payload.lastMealCategory ?? null,
+            payload.lastMealPortion ?? null,
             payload.note ?? null,
             JSON.stringify(payload.metadata ?? {}),
           ],
@@ -143,6 +152,8 @@ export class DaysRepository {
       date: row.local_date,
       noMeals: row.no_meals,
       lastMealAt: row.last_meal_at,
+      lastMealCategory: row.last_meal_category,
+      lastMealPortion: row.last_meal_portion === undefined || row.last_meal_portion === null ? undefined : Number(row.last_meal_portion),
       measuredAt: row.measured_at,
       valueKg: row.value_kg === undefined ? undefined : Number(row.value_kg),
       occurredAt: row.occurred_at,

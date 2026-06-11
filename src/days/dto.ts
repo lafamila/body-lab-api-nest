@@ -19,6 +19,14 @@ export class UpsertDayDto {
 
   @IsOptional()
   @IsString()
+  lastMealCategory?: string | null;
+
+  @IsOptional()
+  @IsNumber()
+  lastMealPortion?: number | null;
+
+  @IsOptional()
+  @IsString()
   note?: string | null;
 
   @IsOptional()
