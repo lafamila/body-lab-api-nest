@@ -1,5 +1,5 @@
 ---
-status: IN_PROGRESS
+status: COMPLETED
 summary: "body-lab 배포 API 서버를 NestJS/PostgreSQL/Redis/auth-api-nest 통합 구조로 구현한다"
 ---
 
