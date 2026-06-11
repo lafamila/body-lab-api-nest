@@ -391,6 +391,7 @@ let editingId = null;
 let editingMetadata = {};
 let selectedImportFile = null;
 let loadingCount = 0;
+let configEvents = null;
 const statusBar = document.getElementById('statusBar');
 
 function setStatus(message, className) {
@@ -446,6 +447,18 @@ async function load() {
     '</td></tr>'
   ).join('');
   setStatus('Loaded', 'success');
+}
+function subscribeConfigEvents() {
+  if (configEvents) return;
+  configEvents = new EventSource('/prediction-config/events');
+  const reloadFromEvent = () => {
+    load().catch((error) => setStatus(error.message || 'Sync failed', 'error'));
+  };
+  configEvents.onmessage = reloadFromEvent;
+  configEvents.addEventListener('prediction-config', reloadFromEvent);
+  configEvents.onerror = () => {
+    setStatus('Realtime sync disconnected', 'error');
+  };
 }
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -561,7 +574,10 @@ dropzone.addEventListener('drop', (event) => {
   setImportFile(event.dataTransfer.files && event.dataTransfer.files[0] ? event.dataTransfer.files[0] : null);
 });
 
-assertLoggedIn().then(load).catch(() => {
+assertLoggedIn().then(() => {
+  subscribeConfigEvents();
+  return load();
+}).catch(() => {
   window.location.href = '/admin/login';
 });
 </script>
