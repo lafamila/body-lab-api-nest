@@ -1,5 +1,5 @@
 ---
-status: PREPARED
+status: COMPLETED
 summary: "body-lab native 설정 화면을 위해 prediction config metadata와 날짜별 weight/record API contract를 보강한다"
 ---
 
