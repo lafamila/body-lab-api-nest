@@ -18,6 +18,18 @@ export interface ServerSentMessage {
   data: SyncNotification;
 }
 
+export interface PredictionConfigNotification {
+  resource: 'prediction-config';
+  action: 'updated';
+  cursor: string;
+  items: unknown[];
+}
+
+export interface PredictionConfigServerSentMessage {
+  type?: string;
+  data: PredictionConfigNotification;
+}
+
 @Injectable()
 export class SyncService implements OnModuleDestroy {
   private readonly logger = new Logger(SyncService.name);
@@ -61,6 +73,66 @@ export class SyncService implements OnModuleDestroy {
     } catch (error) {
       this.logger.warn(`Redis sync publish failed: ${(error as Error).message}`);
     }
+  }
+
+  async publishPredictionConfig(items: unknown[]): Promise<void> {
+    if (!this.publisher) {
+      return;
+    }
+
+    const payload: PredictionConfigNotification = {
+      resource: 'prediction-config',
+      action: 'updated',
+      cursor: new Date().toISOString(),
+      items,
+    };
+
+    try {
+      await this.publisher.connect().catch((error: Error & { message?: string }) => {
+        if (!error.message?.includes('already connecting') && !error.message?.includes('already connected')) {
+          throw error;
+        }
+      });
+      await this.publisher.publish(this.predictionConfigChannel(), JSON.stringify(payload));
+    } catch (error) {
+      this.logger.warn(`Redis prediction config publish failed: ${(error as Error).message}`);
+    }
+  }
+
+  streamPredictionConfig(): Observable<PredictionConfigServerSentMessage> {
+    return new Observable((subscriber) => {
+      if (!this.config.redisUrl) {
+        subscriber.next({
+          type: 'prediction-config-ready',
+          data: {
+            resource: 'prediction-config',
+            action: 'updated',
+            cursor: new Date().toISOString(),
+            items: [],
+          },
+        });
+        return undefined;
+      }
+
+      const redis = new Redis(this.config.redisUrl, {
+        keyPrefix: `${this.config.redisKeyPrefix}:`,
+        lazyConnect: true,
+      });
+      const onMessage = (_channel: string, message: string) => {
+        subscriber.next({ type: 'prediction-config', data: JSON.parse(message) as PredictionConfigNotification });
+      };
+
+      redis.on('message', onMessage);
+      redis
+        .connect()
+        .then(() => redis.subscribe(this.predictionConfigChannel()))
+        .catch((error) => subscriber.error(error));
+
+      return () => {
+        redis.off('message', onMessage);
+        redis.disconnect();
+      };
+    });
   }
 
   stream(accountId: string): Observable<ServerSentMessage> {
@@ -110,5 +182,9 @@ export class SyncService implements OnModuleDestroy {
 
   private channel(accountId: string): string {
     return `sync:${this.accountHash(accountId)}`;
+  }
+
+  private predictionConfigChannel(): string {
+    return 'prediction-config';
   }
 }

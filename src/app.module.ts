@@ -7,6 +7,7 @@ import { ExportImportModule } from './export-import/export-import.module';
 import { HealthModule } from './health/health.module';
 import { LogsModule } from './logs/logs.module';
 import { PredictionsModule } from './predictions/predictions.module';
+import { PredictionConfigModule } from './prediction-config/prediction-config.module';
 import { SyncModule } from './sync/sync.module';
 import { TaxonomyModule } from './taxonomy/taxonomy.module';
 
@@ -21,6 +22,7 @@ import { TaxonomyModule } from './taxonomy/taxonomy.module';
     DaysModule,
     LogsModule,
     PredictionsModule,
+    PredictionConfigModule,
     ExportImportModule,
   ],
 })
