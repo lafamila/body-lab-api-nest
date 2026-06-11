@@ -2,10 +2,10 @@ import { Controller, Sse, UseGuards } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { AuthAccountParam } from '../auth/auth-account.decorator';
 import { AuthAccount } from '../auth/auth.types';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { BodyLabSessionGuard } from '../auth/body-lab-session.guard';
 import { ServerSentMessage, SyncService } from './sync.service';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(BodyLabSessionGuard)
 @Controller('sync')
 export class SyncController {
   constructor(private readonly syncService: SyncService) {}

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from './auth/auth.module';
 import { BodyLabConfigModule } from './config/config.module';
 import { DatabaseModule } from './database/database.module';
+import { DaysModule } from './days/days.module';
 import { ExportImportModule } from './export-import/export-import.module';
 import { HealthModule } from './health/health.module';
 import { LogsModule } from './logs/logs.module';
@@ -17,6 +18,7 @@ import { TaxonomyModule } from './taxonomy/taxonomy.module';
     HealthModule,
     TaxonomyModule,
     SyncModule,
+    DaysModule,
     LogsModule,
     PredictionsModule,
     ExportImportModule,

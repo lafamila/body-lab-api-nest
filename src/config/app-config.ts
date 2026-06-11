@@ -14,6 +14,12 @@ export interface AppConfig {
   authAudience: string;
   authServiceKey: string;
   authRequiredPermission: string;
+  authApiBaseUrl: string;
+  oidcClientId: string;
+  oidcClientSecret?: string;
+  oidcRedirectUri: string;
+  sessionCookieName: string;
+  sessionMaxAgeSeconds: number;
 }
 
 function intFromEnv(name: string, fallback: number): number {
@@ -53,5 +59,11 @@ export function loadAppConfig(): AppConfig {
     authAudience: process.env.AUTH_AUDIENCE ?? 'service:body-lab',
     authServiceKey: process.env.AUTH_SERVICE_KEY ?? 'body-lab',
     authRequiredPermission: process.env.AUTH_REQUIRED_PERMISSION ?? 'owner',
+    authApiBaseUrl: process.env.AUTH_API_BASE_URL ?? process.env.AUTH_ISSUER_URL ?? 'http://localhost:3032',
+    oidcClientId: process.env.BODY_LAB_OIDC_CLIENT_ID ?? 'body-lab-mac',
+    oidcClientSecret: process.env.BODY_LAB_OIDC_CLIENT_SECRET,
+    oidcRedirectUri: process.env.BODY_LAB_OIDC_REDIRECT_URI ?? 'bodylab-mac://auth/callback',
+    sessionCookieName: process.env.BODY_LAB_SESSION_COOKIE_NAME ?? 'body_lab_session',
+    sessionMaxAgeSeconds: intFromEnv('BODY_LAB_SESSION_MAX_AGE_SECONDS', 60 * 60 * 24 * 30),
   };
 }

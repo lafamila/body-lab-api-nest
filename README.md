@@ -10,6 +10,7 @@ The server is a data and sync hub. It stores events and client-generated predict
 - JWT audience: `service:body-lab`
 - Required permission: `owner`
 - `visitor` or missing body-lab permission is denied
+- Clients log in through `POST /session/login`; domain routes use the returned body-lab session id
 - Production URL: `https://lab.lafamila.xyz`
 - Local Mac/simulator URL: `http://localhost:3020`
 - Physical iPhone dev URL: `http://{LAN_IP}:3020`
@@ -22,10 +23,16 @@ Copy `.env.example` to `.env` and configure:
 - `DATABASE_URL`: PostgreSQL database `body_lab`
 - `REDIS_URL`: shared Redis used for minimal sync notifications
 - `AUTH_ISSUER_URL`: auth-api-nest issuer
+- `AUTH_API_BASE_URL`: auth-api-nest API base URL used for service-owned login
 - `AUTH_JWKS_URL`: optional direct JWKS URL; if omitted the API uses OIDC discovery from the issuer
 - `AUTH_AUDIENCE`: defaults to `service:body-lab`
 - `AUTH_SERVICE_KEY`: defaults to `body-lab`
 - `AUTH_REQUIRED_PERMISSION`: defaults to `owner`
+- `BODY_LAB_OIDC_CLIENT_ID`: auth-api-nest OIDC client id registered for body-lab native clients
+- `BODY_LAB_OIDC_CLIENT_SECRET`: optional client secret when the registered client is confidential
+- `BODY_LAB_OIDC_REDIRECT_URI`: redirect URI registered for the OIDC client
+- `BODY_LAB_SESSION_COOKIE_NAME`: optional cookie name for browser-style clients
+- `BODY_LAB_SESSION_MAX_AGE_SECONDS`: body-lab session lifetime
 
 ## Commands
 
@@ -42,7 +49,12 @@ docker build -t body-lab-api-nest .
 ## API Surface
 
 - `GET /health`
+- `POST /session/login`
+- `GET /session/me`
+- `POST /session/logout`
 - `GET /taxonomy`
+- `GET /days/:date`
+- `PATCH /days/:date`
 - `POST /logs/weights`, `GET /logs/weights`, `PATCH /logs/weights/:id`, `DELETE /logs/weights/:id`
 - `POST /logs/meals`, `GET /logs/meals`, `PATCH /logs/meals/:id`, `DELETE /logs/meals/:id`
 - `POST /logs/drinks`, `GET /logs/drinks`, `PATCH /logs/drinks/:id`, `DELETE /logs/drinks/:id`
@@ -54,4 +66,4 @@ docker build -t body-lab-api-nest .
 - `POST /import`
 - `GET /sync/events` for server-sent events; clients pull changed records after each notification
 
-All domain routes require a valid bearer token from auth-api-nest.
+All domain routes require a valid body-lab session. Native clients send it through `X-Body-Lab-Session`; browser-style clients can use the `body_lab_session` cookie.

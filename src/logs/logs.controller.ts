@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthAccountParam } from '../auth/auth-account.decorator';
 import { AuthAccount } from '../auth/auth.types';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { BodyLabSessionGuard } from '../auth/body-lab-session.guard';
 import {
   CreateBathroomLogDto,
   CreateDrinkLogDto,
@@ -18,7 +18,7 @@ import {
 } from './dto';
 import { LogsService } from './logs.service';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(BodyLabSessionGuard)
 @Controller('logs')
 export class LogsController {
   constructor(private readonly logsService: LogsService) {}

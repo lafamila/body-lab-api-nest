@@ -18,6 +18,11 @@ describe('SyncService', () => {
         authAudience: 'service:body-lab',
         authServiceKey: 'body-lab',
         authRequiredPermission: 'owner',
+        authApiBaseUrl: 'https://auth.example.test',
+        oidcClientId: 'body-lab-mac',
+        oidcRedirectUri: 'bodylab-mac://auth/callback',
+        sessionCookieName: 'body_lab_session',
+        sessionMaxAgeSeconds: 3600,
       }),
     );
 

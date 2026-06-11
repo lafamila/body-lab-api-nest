@@ -12,7 +12,11 @@ describe('ExportImportService', () => {
       replaceAll: jest.fn(async (_accountId: string, rows: unknown[]) => rows),
     };
     const sync = { publish: jest.fn(async () => undefined) };
-    const service = new ExportImportService(logs as never, predictions as never, sync as never);
+    const database = {
+      query: jest.fn(async () => ({ rows: [] })),
+      transaction: jest.fn(async (work: (query: jest.Mock) => Promise<unknown>) => work(jest.fn(async () => ({ rows: [] })))),
+    };
+    const service = new ExportImportService(logs as never, predictions as never, sync as never, database as never);
 
     const exported = await service.export('account-1');
     const imported = await service.import('account-2', exported);
@@ -21,11 +25,12 @@ describe('ExportImportService', () => {
     expect(logs.list).toHaveBeenCalledWith('weights', 'account-1');
     expect(logs.replaceAll).toHaveBeenCalledWith('weights', 'account-2', [{ clientEventId: 'weights-1' }]);
     expect(imported.imported.predictions).toBe(1);
+    expect(imported.imported['daily-checkins']).toBe(0);
     expect(sync.publish).toHaveBeenCalledWith('account-2', 'export-import', 'imported', expect.any(Object));
   });
 
   it('rejects import rows that carry account ownership fields', async () => {
-    const service = new ExportImportService({} as never, {} as never, {} as never);
+    const service = new ExportImportService({} as never, {} as never, {} as never, {} as never);
 
     await expect(
       service.import('account-1', {

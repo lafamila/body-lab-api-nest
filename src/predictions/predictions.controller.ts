@@ -1,11 +1,11 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AuthAccountParam } from '../auth/auth-account.decorator';
 import { AuthAccount } from '../auth/auth.types';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { BodyLabSessionGuard } from '../auth/body-lab-session.guard';
 import { CreatePredictionSnapshotDto, UpdatePredictionSnapshotDto } from './dto';
 import { PredictionsService } from './predictions.service';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(BodyLabSessionGuard)
 @Controller('predictions')
 export class PredictionsController {
   constructor(private readonly predictionsService: PredictionsService) {}

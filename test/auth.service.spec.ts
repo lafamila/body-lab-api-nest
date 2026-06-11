@@ -17,6 +17,11 @@ function config(): BodyLabConfigService {
     authAudience: 'service:body-lab',
     authServiceKey: 'body-lab',
     authRequiredPermission: 'owner',
+    authApiBaseUrl: 'https://auth.example.test',
+    oidcClientId: 'body-lab-mac',
+    oidcRedirectUri: 'bodylab-mac://auth/callback',
+    sessionCookieName: 'body_lab_session',
+    sessionMaxAgeSeconds: 3600,
   });
 }
 
@@ -55,6 +60,22 @@ describe('AuthService', () => {
         services: { other: 'owner' },
       }),
     ).toThrow(UnauthorizedException);
+  });
+
+  it('accepts auth-api namespaced service claim', () => {
+    const service = new AuthService(config());
+
+    const account = service.validatePayload({
+      sub: 'account-1',
+      'https://lafamila.xyz/claims/service': {
+        key: 'body-lab',
+        permission: 'owner',
+        permissionSchemaVersion: 2,
+      },
+    });
+
+    expect(account.accountId).toBe('account-1');
+    expect(account.permission).toBe('owner');
   });
 
   it('rejects wrong audience during signature validation', async () => {

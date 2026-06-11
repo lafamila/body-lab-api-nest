@@ -62,4 +62,28 @@ export class BodyLabConfigService {
   get authRequiredPermission(): string {
     return this.config.authRequiredPermission;
   }
+
+  get authApiBaseUrl(): string {
+    return this.config.authApiBaseUrl;
+  }
+
+  get oidcClientId(): string {
+    return this.config.oidcClientId;
+  }
+
+  get oidcClientSecret(): string | undefined {
+    return this.config.oidcClientSecret;
+  }
+
+  get oidcRedirectUri(): string {
+    return this.config.oidcRedirectUri;
+  }
+
+  get sessionCookieName(): string {
+    return this.config.sessionCookieName;
+  }
+
+  get sessionMaxAgeSeconds(): number {
+    return this.config.sessionMaxAgeSeconds;
+  }
 }

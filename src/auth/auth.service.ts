@@ -77,6 +77,17 @@ export class AuthService {
       return this.permissionFromArray(servicePermissions, serviceKey);
     }
 
+    const namespacedService = claims['https://lafamila.xyz/claims/service'];
+    if (namespacedService && typeof namespacedService === 'object' && !Array.isArray(namespacedService)) {
+      const record = namespacedService as Record<string, unknown>;
+      if (record.key === serviceKey || record.serviceKey === serviceKey || record.service_key === serviceKey) {
+        const permission = this.permissionFromCandidate(record as ServicePermissionCandidate);
+        if (permission) {
+          return permission;
+        }
+      }
+    }
+
     return undefined;
   }
 

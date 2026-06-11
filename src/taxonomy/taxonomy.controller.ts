@@ -1,8 +1,8 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { BodyLabSessionGuard } from '../auth/body-lab-session.guard';
 import { TaxonomyService } from './taxonomy.service';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(BodyLabSessionGuard)
 @Controller('taxonomy')
 export class TaxonomyController {
   constructor(private readonly taxonomyService: TaxonomyService) {}
