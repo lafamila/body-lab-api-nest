@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { SyncService } from '../sync/sync.service';
 import { PredictionConfigItemDto, PredictionConfigKind, PredictionConfigStatusDto, UpsertPredictionConfigItemDto } from './dto';
 import { PredictionConfigRepository } from './prediction-config.repository';
@@ -20,12 +20,12 @@ export class PredictionConfigService {
     private readonly sync: SyncService,
   ) {}
 
-  list(includeInactive = false): Promise<PredictionConfigItemDto[]> {
-    return this.repository.list(includeInactive);
+  list(accountId: string, includeInactive = false): Promise<PredictionConfigItemDto[]> {
+    return this.repository.list(accountId, includeInactive);
   }
 
-  async status(): Promise<PredictionConfigStatusDto> {
-    const items = await this.list(false);
+  async status(accountId: string): Promise<PredictionConfigStatusDto> {
+    const items = await this.list(accountId, false);
     const activeByGlobalKey = new Map(
       items.filter((item) => item.kind === 'global' && item.isActive).map((item) => [item.key, item]),
     );
@@ -60,31 +60,34 @@ export class PredictionConfigService {
     };
   }
 
-  async upsert(payload: UpsertPredictionConfigItemDto): Promise<PredictionConfigItemDto> {
-    const item = await this.repository.upsert(payload);
-    await this.publishConfig();
+  async upsert(accountId: string, payload: UpsertPredictionConfigItemDto): Promise<PredictionConfigItemDto> {
+    if (payload.kind === 'global') {
+      throw new BadRequestException('Global prediction config keys cannot be created');
+    }
+    const item = await this.repository.upsert(accountId, payload);
+    await this.publishConfig(accountId);
     return item;
   }
 
-  async update(id: string, payload: UpsertPredictionConfigItemDto): Promise<PredictionConfigItemDto> {
-    const item = await this.repository.update(id, payload);
-    await this.publishConfig();
+  async update(accountId: string, id: string, payload: UpsertPredictionConfigItemDto): Promise<PredictionConfigItemDto> {
+    const item = await this.repository.update(accountId, id, payload);
+    await this.publishConfig(accountId);
     return item;
   }
 
-  async delete(id: string): Promise<PredictionConfigItemDto> {
-    const item = await this.repository.softDelete(id);
-    await this.publishConfig();
+  async delete(accountId: string, id: string): Promise<PredictionConfigItemDto> {
+    const item = await this.repository.softDelete(accountId, id);
+    await this.publishConfig(accountId);
     return item;
   }
 
-  async replaceAll(payloads: UpsertPredictionConfigItemDto[]): Promise<PredictionConfigItemDto[]> {
-    const items = await this.repository.replaceAll(payloads);
-    await this.publishConfig();
+  async replaceAll(accountId: string, payloads: UpsertPredictionConfigItemDto[]): Promise<PredictionConfigItemDto[]> {
+    const items = await this.repository.replaceAll(accountId, payloads);
+    await this.publishConfig(accountId);
     return items;
   }
 
-  private async publishConfig(): Promise<void> {
-    await this.sync.publishPredictionConfig(await this.list(false));
+  private async publishConfig(accountId: string): Promise<void> {
+    await this.sync.publishPredictionConfig(accountId, await this.list(accountId, false));
   }
 }

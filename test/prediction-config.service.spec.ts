@@ -4,11 +4,11 @@ import { PredictionConfigService } from '../src/prediction-config/prediction-con
 
 const baseRow = {
   id: '11111111-1111-1111-1111-111111111111',
-  kind: 'global',
-  key: 'fasting_threshold_hours',
-  label: 'Fasting threshold hours',
-  mass_kg: '10.0000',
-  stool_ratio: null,
+  kind: 'meal',
+  key: 'balanced',
+  label: 'Balanced',
+  mass_kg: '0.6000',
+  stool_ratio: '0.1800',
   minute_factor: null,
   sort_order: 10,
   is_active: true,
@@ -20,27 +20,28 @@ describe('PredictionConfigRepository', () => {
   it('round-trips metadata on upsert', async () => {
     const database = {
       query: jest.fn(async (_sql: string, params: readonly unknown[]) => ({
-        rows: [{ ...baseRow, metadata: JSON.parse(String(params[8])) }],
+        rows: [{ ...baseRow, metadata: JSON.parse(String(params[9])) }],
         rowCount: 1,
       })),
     };
     const repository = new PredictionConfigRepository(database as never);
 
-    const item = await repository.upsert({
-      kind: 'global',
-      key: 'fasting_threshold_hours',
-      label: 'Fasting threshold hours',
-      massKg: 10,
-      metadata: { description: 'Fasting starts after this many hours.', unit: 'hours', requiredInSetup: true },
+    const item = await repository.upsert('account-1', {
+      kind: 'meal',
+      key: 'balanced',
+      label: 'Balanced',
+      massKg: 0.6,
+      stoolRatio: 0.18,
+      metadata: { description: 'Meal mass contribution.', unit: 'kg', requiredInSetup: false },
     });
 
-    expect(database.query.mock.calls[0][1][8]).toBe(
-      JSON.stringify({ description: 'Fasting starts after this many hours.', unit: 'hours', requiredInSetup: true }),
+    expect(database.query.mock.calls[0][1][9]).toBe(
+      JSON.stringify({ description: 'Meal mass contribution.', unit: 'kg', requiredInSetup: false }),
     );
     expect(item.metadata).toEqual({
-      description: 'Fasting starts after this many hours.',
-      unit: 'hours',
-      requiredInSetup: true,
+      description: 'Meal mass contribution.',
+      unit: 'kg',
+      requiredInSetup: false,
     });
   });
 });
@@ -79,10 +80,11 @@ describe('PredictionConfigService', () => {
     };
     const service = new PredictionConfigService(repository as never, {} as never);
 
-    const status = await service.status();
+    const status = await service.status('account-1');
 
     expect(status.isReady).toBe(false);
     expect(status.requiresSetup).toBe(true);
+    expect(repository.list).toHaveBeenCalledWith('account-1', false);
     expect(status.missingGlobalKeys).toEqual([
       'fasting_max_hours',
       'fasting_hour_kg',
@@ -111,7 +113,7 @@ describe('PredictionConfigService', () => {
     const sync = { publishPredictionConfig: jest.fn(async () => undefined) };
     const service = new PredictionConfigService(repository as never, sync as never);
 
-    await service.upsert({
+    await service.upsert('account-1', {
       kind: 'meal',
       key: 'balanced',
       label: 'Balanced',
@@ -119,8 +121,25 @@ describe('PredictionConfigService', () => {
       metadata: { description: 'Meal' },
     });
 
-    expect(sync.publishPredictionConfig).toHaveBeenCalledWith([
+    expect(repository.upsert).toHaveBeenCalledWith(
+      'account-1',
+      expect.objectContaining({ kind: 'meal', key: 'balanced' }),
+    );
+    expect(sync.publishPredictionConfig).toHaveBeenCalledWith('account-1', [
       expect.objectContaining({ metadata: { description: 'Meal' } }),
     ]);
+  });
+
+  it('rejects global creation because global keys are seeded and fixed', async () => {
+    const service = new PredictionConfigService({} as never, {} as never);
+
+    await expect(
+      service.upsert('account-1', {
+        kind: 'global',
+        key: 'new_global',
+        label: 'New global',
+        massKg: 1,
+      }),
+    ).rejects.toThrow('Global prediction config keys cannot be created');
   });
 });

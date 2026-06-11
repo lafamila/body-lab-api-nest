@@ -19,6 +19,7 @@ export interface ServerSentMessage {
 }
 
 export interface PredictionConfigNotification {
+  accountHash: string;
   resource: 'prediction-config';
   action: 'updated';
   cursor: string;
@@ -75,12 +76,13 @@ export class SyncService implements OnModuleDestroy {
     }
   }
 
-  async publishPredictionConfig(items: unknown[]): Promise<void> {
+  async publishPredictionConfig(accountId: string, items: unknown[]): Promise<void> {
     if (!this.publisher) {
       return;
     }
 
     const payload: PredictionConfigNotification = {
+      accountHash: this.accountHash(accountId),
       resource: 'prediction-config',
       action: 'updated',
       cursor: new Date().toISOString(),
@@ -93,18 +95,19 @@ export class SyncService implements OnModuleDestroy {
           throw error;
         }
       });
-      await this.publisher.publish(this.predictionConfigChannel(), JSON.stringify(payload));
+      await this.publisher.publish(this.predictionConfigChannel(accountId), JSON.stringify(payload));
     } catch (error) {
       this.logger.warn(`Redis prediction config publish failed: ${(error as Error).message}`);
     }
   }
 
-  streamPredictionConfig(): Observable<PredictionConfigServerSentMessage> {
+  streamPredictionConfig(accountId: string): Observable<PredictionConfigServerSentMessage> {
     return new Observable((subscriber) => {
       if (!this.config.redisUrl) {
         subscriber.next({
           type: 'prediction-config-ready',
           data: {
+            accountHash: this.accountHash(accountId),
             resource: 'prediction-config',
             action: 'updated',
             cursor: new Date().toISOString(),
@@ -125,7 +128,7 @@ export class SyncService implements OnModuleDestroy {
       redis.on('message', onMessage);
       redis
         .connect()
-        .then(() => redis.subscribe(this.predictionConfigChannel()))
+        .then(() => redis.subscribe(this.predictionConfigChannel(accountId)))
         .catch((error) => subscriber.error(error));
 
       return () => {
@@ -184,7 +187,7 @@ export class SyncService implements OnModuleDestroy {
     return `sync:${this.accountHash(accountId)}`;
   }
 
-  private predictionConfigChannel(): string {
-    return 'prediction-config';
+  private predictionConfigChannel(accountId: string): string {
+    return `prediction-config:${this.accountHash(accountId)}`;
   }
 }

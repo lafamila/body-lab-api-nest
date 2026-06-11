@@ -1,5 +1,6 @@
 create table if not exists prediction_config_items (
   id uuid primary key default gen_random_uuid(),
+  account_id text,
   kind text not null check (kind in ('global', 'meal', 'drink', 'bathroom', 'workout')),
   key text not null,
   label text not null,
@@ -12,12 +13,24 @@ create table if not exists prediction_config_items (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   deleted_at timestamptz,
-  unique (kind, key)
+  check (
+    (kind = 'global' and account_id is null)
+    or
+    (kind <> 'global' and account_id is not null)
+  )
 );
 
 create index if not exists prediction_config_items_kind_sort_idx
-  on prediction_config_items(kind, sort_order, key)
+  on prediction_config_items(account_id, kind, sort_order, key)
   where deleted_at is null;
+
+create unique index if not exists prediction_config_items_global_key_uidx
+  on prediction_config_items(kind, key)
+  where kind = 'global';
+
+create unique index if not exists prediction_config_items_account_kind_key_uidx
+  on prediction_config_items(account_id, kind, key)
+  where kind <> 'global';
 
 insert into prediction_config_items (kind, key, label, mass_kg, stool_ratio, minute_factor, sort_order) values
   ('global', 'fasting_threshold_hours', 'Fasting threshold hours', 10.0000, null, null, 10),
@@ -25,26 +38,8 @@ insert into prediction_config_items (kind, key, label, mass_kg, stool_ratio, min
   ('global', 'fasting_hour_kg', 'Fasting kg per hour', -0.0150, null, null, 30),
   ('global', 'steps_10000_kg', 'Steps kg per 10000', -0.0800, null, null, 40),
   ('global', 'delta_min_kg', 'Delta min kg', -1.2000, null, null, 50),
-  ('global', 'delta_max_kg', 'Delta max kg', 1.2000, null, null, 60),
-  ('meal', 'balanced', 'Balanced', 0.6000, 0.1800, null, 10),
-  ('meal', 'protein', 'Protein', 0.3500, 0.1000, null, 20),
-  ('meal', 'carb', 'Carb', 0.6000, 0.1400, null, 30),
-  ('meal', 'vegetable', 'Vegetable', 0.4500, 0.2500, null, 40),
-  ('meal', 'fried', 'Fried', 0.5000, 0.0800, null, 50),
-  ('meal', 'sugar', 'Sugar', 0.2000, 0.0500, null, 60),
-  ('meal', 'salt', 'Salt', 0.6000, 0.1400, null, 70),
-  ('drink', 'water', 'Water', 1.0000, null, null, 10),
-  ('drink', 'coffee', 'Coffee', 1.0000, null, null, 20),
-  ('bathroom', 'urine', 'Urine', -0.6000, null, null, 10),
-  ('bathroom', 'stool', 'Stool', null, null, null, 20),
-  ('workout', 'walk', 'Walk', null, null, 0.00200, 10),
-  ('workout', 'run', 'Run', null, null, 0.00200, 20),
-  ('workout', 'strength', 'Strength', null, null, 0.00200, 30),
-  ('workout', 'stairs', 'Stairs', null, null, 0.00200, 40),
-  ('workout', 'pushup', 'Pushup', null, null, 0.00200, 50),
-  ('workout', 'squat', 'Squat', null, null, 0.00200, 60),
-  ('workout', 'lat_pulldown', 'Lat pulldown', null, null, 0.00200, 70)
-on conflict (kind, key) do update set
+  ('global', 'delta_max_kg', 'Delta max kg', 1.2000, null, null, 60)
+on conflict (kind, key) where kind = 'global' do update set
   label = excluded.label,
   mass_kg = excluded.mass_kg,
   stool_ratio = excluded.stool_ratio,

@@ -6,26 +6,32 @@ import { PredictionConfigItemDto, UpsertPredictionConfigItemDto } from './dto';
 export class PredictionConfigRepository {
   constructor(private readonly database: DatabaseService) {}
 
-  async list(includeInactive = false): Promise<PredictionConfigItemDto[]> {
+  async list(accountId: string, includeInactive = false): Promise<PredictionConfigItemDto[]> {
     const result = await this.database.query(
       `
         select *
         from prediction_config_items
-        where deleted_at is null and ($1::boolean = true or is_active = true)
+        where deleted_at is null
+          and ($1::boolean = true or is_active = true)
+          and (
+            (kind = 'global' and account_id is null)
+            or
+            (kind <> 'global' and account_id = $2)
+          )
         order by kind asc, sort_order asc, key asc
       `,
-      [includeInactive],
+      [includeInactive, accountId],
     );
-    return result.rows.map(this.toDto);
+    return result.rows.map((row) => this.toDto(row));
   }
 
-  async upsert(payload: UpsertPredictionConfigItemDto): Promise<PredictionConfigItemDto> {
+  async upsert(accountId: string, payload: UpsertPredictionConfigItemDto): Promise<PredictionConfigItemDto> {
     const result = await this.database.query(
       `
         insert into prediction_config_items
-          (kind, key, label, mass_kg, stool_ratio, minute_factor, sort_order, is_active, metadata)
-        values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        on conflict (kind, key) do update set
+          (account_id, kind, key, label, mass_kg, stool_ratio, minute_factor, sort_order, is_active, metadata)
+        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        on conflict (account_id, kind, key) where kind <> 'global' do update set
           label = excluded.label,
           mass_kg = excluded.mass_kg,
           stool_ratio = excluded.stool_ratio,
@@ -38,6 +44,7 @@ export class PredictionConfigRepository {
         returning *
       `,
       [
+        accountId,
         payload.kind,
         payload.key,
         payload.label,
@@ -52,33 +59,44 @@ export class PredictionConfigRepository {
     return this.toDto(result.rows[0]);
   }
 
-  async update(id: string, payload: UpsertPredictionConfigItemDto): Promise<PredictionConfigItemDto> {
+  async update(accountId: string, id: string, payload: UpsertPredictionConfigItemDto): Promise<PredictionConfigItemDto> {
+    const existing = await this.findOwned(accountId, id);
+    const kind = existing.kind === 'global' ? 'global' : payload.kind;
+    const key = existing.kind === 'global' ? existing.key : payload.key;
+    const isActive = existing.kind === 'global' ? true : (payload.isActive ?? true);
     const result = await this.database.query(
       `
         update prediction_config_items
-        set kind = $2,
-            key = $3,
-            label = $4,
-            mass_kg = $5,
-            stool_ratio = $6,
-            minute_factor = $7,
-            sort_order = $8,
-            is_active = $9,
-            metadata = $10,
+        set kind = $3,
+            key = $4,
+            label = $5,
+            mass_kg = $6,
+            stool_ratio = $7,
+            minute_factor = $8,
+            sort_order = $9,
+            is_active = $10,
+            metadata = $11,
             updated_at = now()
-        where id = $1 and deleted_at is null
+        where id = $1
+          and deleted_at is null
+          and (
+            (kind = 'global' and account_id is null)
+            or
+            (kind <> 'global' and account_id = $2)
+          )
         returning *
       `,
       [
         id,
-        payload.kind,
-        payload.key,
+        accountId,
+        kind,
+        key,
         payload.label,
         payload.massKg ?? null,
         payload.stoolRatio ?? null,
         payload.minuteFactor ?? null,
         payload.sortOrder ?? 0,
-        payload.isActive ?? true,
+        isActive,
         JSON.stringify(payload.metadata ?? {}),
       ],
     );
@@ -88,15 +106,18 @@ export class PredictionConfigRepository {
     return this.toDto(result.rows[0]);
   }
 
-  async softDelete(id: string): Promise<PredictionConfigItemDto> {
+  async softDelete(accountId: string, id: string): Promise<PredictionConfigItemDto> {
     const result = await this.database.query(
       `
         update prediction_config_items
         set deleted_at = now(), is_active = false, updated_at = now()
-        where id = $1 and deleted_at is null
+        where id = $1
+          and kind <> 'global'
+          and account_id = $2
+          and deleted_at is null
         returning *
       `,
-      [id],
+      [id, accountId],
     );
     if (!result.rowCount) {
       throw new NotFoundException('Prediction config item not found');
@@ -104,51 +125,92 @@ export class PredictionConfigRepository {
     return this.toDto(result.rows[0]);
   }
 
-  async replaceAll(payloads: UpsertPredictionConfigItemDto[]): Promise<PredictionConfigItemDto[]> {
+  async replaceAll(accountId: string, payloads: UpsertPredictionConfigItemDto[]): Promise<PredictionConfigItemDto[]> {
     return this.database.transaction(async (query) => {
       await query(
         `
           update prediction_config_items
           set deleted_at = now(), is_active = false, updated_at = now()
-          where deleted_at is null
+          where account_id = $1 and kind <> 'global' and deleted_at is null
         `,
+        [accountId],
       );
 
       const rows: PredictionConfigItemDto[] = [];
       for (const payload of payloads) {
+        const params = [
+          payload.kind === 'global' ? null : accountId,
+          payload.kind,
+          payload.key,
+          payload.label,
+          payload.massKg ?? null,
+          payload.stoolRatio ?? null,
+          payload.minuteFactor ?? null,
+          payload.sortOrder ?? 0,
+          payload.kind === 'global' ? true : (payload.isActive ?? true),
+          JSON.stringify(payload.metadata ?? {}),
+        ];
         const result = await query(
-          `
-            insert into prediction_config_items
-              (kind, key, label, mass_kg, stool_ratio, minute_factor, sort_order, is_active, metadata)
-            values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            on conflict (kind, key) do update set
-              label = excluded.label,
-              mass_kg = excluded.mass_kg,
-              stool_ratio = excluded.stool_ratio,
-              minute_factor = excluded.minute_factor,
-              sort_order = excluded.sort_order,
-              is_active = excluded.is_active,
-              metadata = excluded.metadata,
-              deleted_at = null,
-              updated_at = now()
-            returning *
-          `,
-          [
-            payload.kind,
-            payload.key,
-            payload.label,
-            payload.massKg ?? null,
-            payload.stoolRatio ?? null,
-            payload.minuteFactor ?? null,
-            payload.sortOrder ?? 0,
-            payload.isActive ?? true,
-            JSON.stringify(payload.metadata ?? {}),
-          ],
+          payload.kind === 'global'
+            ? `
+              insert into prediction_config_items
+                (account_id, kind, key, label, mass_kg, stool_ratio, minute_factor, sort_order, is_active, metadata)
+              values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+              on conflict (kind, key) where kind = 'global' do update set
+                label = excluded.label,
+                mass_kg = excluded.mass_kg,
+                stool_ratio = excluded.stool_ratio,
+                minute_factor = excluded.minute_factor,
+                sort_order = excluded.sort_order,
+                is_active = excluded.is_active,
+                metadata = excluded.metadata,
+                deleted_at = null,
+                updated_at = now()
+              returning *
+            `
+            : `
+              insert into prediction_config_items
+                (account_id, kind, key, label, mass_kg, stool_ratio, minute_factor, sort_order, is_active, metadata)
+              values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+              on conflict (account_id, kind, key) where kind <> 'global' do update set
+                label = excluded.label,
+                mass_kg = excluded.mass_kg,
+                stool_ratio = excluded.stool_ratio,
+                minute_factor = excluded.minute_factor,
+                sort_order = excluded.sort_order,
+                is_active = excluded.is_active,
+                metadata = excluded.metadata,
+                deleted_at = null,
+                updated_at = now()
+              returning *
+            `,
+          params,
         );
         rows.push(this.toDto(result.rows[0]));
       }
       return rows;
     });
+  }
+
+  private async findOwned(accountId: string, id: string): Promise<PredictionConfigItemDto> {
+    const result = await this.database.query(
+      `
+        select *
+        from prediction_config_items
+        where id = $1
+          and deleted_at is null
+          and (
+            (kind = 'global' and account_id is null)
+            or
+            (kind <> 'global' and account_id = $2)
+          )
+      `,
+      [id, accountId],
+    );
+    if (!result.rowCount) {
+      throw new NotFoundException('Prediction config item not found');
+    }
+    return this.toDto(result.rows[0]);
   }
 
   private toDto(row: Record<string, unknown>): PredictionConfigItemDto {

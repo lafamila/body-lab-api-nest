@@ -34,42 +34,42 @@ export class PredictionConfigController {
 
   @UseGuards(BodyLabSessionGuard)
   @Get('prediction-config')
-  listForClient(@AuthAccountParam() _account: AuthAccount) {
-    return this.service.list(false);
+  listForClient(@AuthAccountParam() account: AuthAccount) {
+    return this.service.list(account.accountId, false);
   }
 
   @UseGuards(BodyLabSessionGuard)
   @Get('prediction-config/status')
-  status(@AuthAccountParam() _account: AuthAccount) {
-    return this.service.status();
+  status(@AuthAccountParam() account: AuthAccount) {
+    return this.service.status(account.accountId);
   }
 
   @UseGuards(BodyLabSessionGuard)
   @Get('prediction-config/items')
-  listForSettings(@AuthAccountParam() _account: AuthAccount, @Query('includeInactive') includeInactive?: string) {
-    return this.service.list(includeInactive === 'true');
+  listForSettings(@AuthAccountParam() account: AuthAccount, @Query('includeInactive') includeInactive?: string) {
+    return this.service.list(account.accountId, includeInactive === 'true');
   }
 
   @UseGuards(BodyLabSessionGuard)
   @Post('prediction-config/items')
-  createForSettings(@AuthAccountParam() _account: AuthAccount, @Body() body: UpsertPredictionConfigItemDto) {
-    return this.service.upsert(body);
+  createForSettings(@AuthAccountParam() account: AuthAccount, @Body() body: UpsertPredictionConfigItemDto) {
+    return this.service.upsert(account.accountId, body);
   }
 
   @UseGuards(BodyLabSessionGuard)
   @Put('prediction-config/items/:id')
   updateForSettings(
-    @AuthAccountParam() _account: AuthAccount,
+    @AuthAccountParam() account: AuthAccount,
     @Param('id') id: string,
     @Body() body: UpsertPredictionConfigItemDto,
   ) {
-    return this.service.update(id, body);
+    return this.service.update(account.accountId, id, body);
   }
 
   @UseGuards(BodyLabSessionGuard)
   @Delete('prediction-config/items/:id')
-  deleteForSettings(@AuthAccountParam() _account: AuthAccount, @Param('id') id: string) {
-    return this.service.delete(id);
+  deleteForSettings(@AuthAccountParam() account: AuthAccount, @Param('id') id: string) {
+    return this.service.delete(account.accountId, id);
   }
 
   @Get('admin/login')
@@ -84,8 +84,8 @@ export class PredictionConfigController {
 
   @UseGuards(BodyLabSessionGuard)
   @Sse('prediction-config/events')
-  events(@AuthAccountParam() _account: AuthAccount): Observable<PredictionConfigServerSentMessage> {
-    return this.sync.streamPredictionConfig();
+  events(@AuthAccountParam() account: AuthAccount): Observable<PredictionConfigServerSentMessage> {
+    return this.sync.streamPredictionConfig(account.accountId);
   }
 
   @UseGuards(BodyLabSessionGuard)
@@ -93,7 +93,7 @@ export class PredictionConfigController {
   async exportAdminBackup(@AuthAccountParam() account: AuthAccount) {
     const [personalData, predictionConfig] = await Promise.all([
       this.exportImportService.export(account.accountId),
-      this.service.list(true),
+      this.service.list(account.accountId, true),
     ]);
     return {
       schemaVersion: 1,
@@ -115,7 +115,7 @@ export class PredictionConfigController {
     const result: Record<string, unknown> = {};
     if (body.config) {
       const predictionConfig = this.normalizePredictionConfig(body.config.predictionConfig);
-      result.predictionConfig = (await this.service.replaceAll(predictionConfig)).length;
+      result.predictionConfig = (await this.service.replaceAll(account.accountId, predictionConfig)).length;
     }
     if (body.data) {
       result.personalData = await this.exportImportService.import(account.accountId, {
@@ -133,26 +133,26 @@ export class PredictionConfigController {
 
   @UseGuards(BodyLabSessionGuard)
   @Get('admin/prediction-config/items')
-  list(@Query('includeInactive') includeInactive?: string) {
-    return this.service.list(includeInactive === 'true');
+  list(@AuthAccountParam() account: AuthAccount, @Query('includeInactive') includeInactive?: string) {
+    return this.service.list(account.accountId, includeInactive === 'true');
   }
 
   @UseGuards(BodyLabSessionGuard)
   @Post('admin/prediction-config/items')
-  create(@Body() body: UpsertPredictionConfigItemDto) {
-    return this.service.upsert(body);
+  create(@AuthAccountParam() account: AuthAccount, @Body() body: UpsertPredictionConfigItemDto) {
+    return this.service.upsert(account.accountId, body);
   }
 
   @UseGuards(BodyLabSessionGuard)
   @Put('admin/prediction-config/items/:id')
-  update(@Param('id') id: string, @Body() body: UpsertPredictionConfigItemDto) {
-    return this.service.update(id, body);
+  update(@AuthAccountParam() account: AuthAccount, @Param('id') id: string, @Body() body: UpsertPredictionConfigItemDto) {
+    return this.service.update(account.accountId, id, body);
   }
 
   @UseGuards(BodyLabSessionGuard)
   @Delete('admin/prediction-config/items/:id')
-  delete(@Param('id') id: string) {
-    return this.service.delete(id);
+  delete(@AuthAccountParam() account: AuthAccount, @Param('id') id: string) {
+    return this.service.delete(account.accountId, id);
   }
 
   private normalizePredictionConfig(value: unknown): UpsertPredictionConfigItemDto[] {
@@ -338,7 +338,7 @@ const adminHtml = `<!doctype html>
         <option value="drink">drink</option>
         <option value="bathroom">bathroom</option>
         <option value="workout">workout</option>
-        <option value="global">global</option>
+        <option value="global" disabled>global</option>
       </select>
       <input id="key" class="key" placeholder="key">
       <input id="label" class="label" placeholder="label">
@@ -441,7 +441,9 @@ async function load() {
     '<td>' + escapeHtml(row.kind) + '</td><td>' + escapeHtml(row.key) + '</td><td>' + escapeHtml(row.label) + '</td>' +
     '<td class="metadata-text">' + escapeHtml((row.metadata && row.metadata.description) || '') + '</td><td>' + escapeHtml((row.metadata && row.metadata.unit) || '') + '</td>' +
     '<td>' + (row.massKg ?? '') + '</td><td>' + (row.stoolRatio ?? '') + '</td><td>' + (row.minuteFactor ?? '') + '</td><td>' + row.sortOrder + '</td><td>' + row.isActive + '</td>' +
-    '<td><button onclick="edit(' + escapeAttribute(JSON.stringify(row)) + ')">Edit</button> <button onclick="removeItem(\\'' + row.id + '\\')">Delete</button></td></tr>'
+    '<td><button onclick="edit(' + escapeAttribute(JSON.stringify(row)) + ')">Edit</button> ' +
+    (row.kind === 'global' ? '' : '<button onclick="removeItem(\\'' + row.id + '\\')">Delete</button>') +
+    '</td></tr>'
   ).join('');
   setStatus('Loaded', 'success');
 }
@@ -455,6 +457,10 @@ function edit(row) {
   if (typeof row === 'string') row = JSON.parse(row);
   editingId = row.id;
   editingMetadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+  const isGlobal = row.kind === 'global';
+  document.getElementById('kind').disabled = isGlobal;
+  document.getElementById('key').disabled = isGlobal;
+  document.getElementById('isActive').disabled = isGlobal;
   for (const key of ['kind','key','label','massKg','stoolRatio','minuteFactor','sortOrder']) document.getElementById(key).value = row[key] ?? '';
   document.getElementById('isActive').checked = row.isActive;
   document.getElementById('metadataDescription').value = editingMetadata.description || '';
@@ -466,6 +472,10 @@ function edit(row) {
 function resetForm() {
   editingId = null;
   editingMetadata = {};
+  document.getElementById('kind').disabled = false;
+  document.getElementById('kind').value = 'meal';
+  document.getElementById('key').disabled = false;
+  document.getElementById('isActive').disabled = false;
   for (const key of ['key','label','massKg','stoolRatio','minuteFactor','sortOrder']) document.getElementById(key).value = '';
   for (const key of ['metadataDescription','metadataSetupText','metadataInputHint','metadataUnit']) document.getElementById(key).value = '';
   document.getElementById('isActive').checked = true;
