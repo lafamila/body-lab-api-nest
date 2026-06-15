@@ -33,6 +33,7 @@ Copy `.env.example` to `.env` and configure:
 - `BODY_LAB_OIDC_REDIRECT_URI`: redirect URI registered for the OIDC client
 - `BODY_LAB_SESSION_COOKIE_NAME`: optional cookie name for browser-style clients
 - `BODY_LAB_SESSION_MAX_AGE_SECONDS`: body-lab session lifetime
+- `BODY_LAB_LOCAL_TIME_ZONE`: local date boundary used by day views and daily weight uniqueness; defaults to `Asia/Seoul`
 
 ## Commands
 

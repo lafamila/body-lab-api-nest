@@ -33,12 +33,10 @@ create unique index if not exists prediction_config_items_account_kind_key_uidx
   where kind <> 'global';
 
 insert into prediction_config_items (kind, key, label, mass_kg, stool_ratio, minute_factor, sort_order) values
-  ('global', 'fasting_threshold_hours', 'Fasting threshold hours', 10.0000, null, null, 10),
-  ('global', 'fasting_max_hours', 'Fasting max hours', 18.0000, null, null, 20),
-  ('global', 'fasting_hour_kg', 'Fasting kg per hour', -0.0150, null, null, 30),
-  ('global', 'steps_10000_kg', 'Steps kg per 10000', -0.0800, null, null, 40),
-  ('global', 'delta_min_kg', 'Delta min kg', -1.2000, null, null, 50),
-  ('global', 'delta_max_kg', 'Delta max kg', 1.2000, null, null, 60)
+  ('global', 'fasting_threshold_hours', 'Fasting threshold hours', 16.0000, null, null, 10),
+  ('global', 'fasting_hour_kg', 'Fasting kg per hour', -0.0150, null, null, 20),
+  ('global', 'steps_10000_kg', 'Steps kg per 10000', -0.0800, null, null, 30),
+  ('global', 'daily_base_delta_kg', 'Daily base delta kg', 0.0000, null, null, 40)
 on conflict (kind, key) where kind = 'global' do update set
   label = excluded.label,
   mass_kg = excluded.mass_kg,

@@ -80,15 +80,23 @@ export class SyncService implements OnModuleDestroy {
   }
 
   async publishPredictionConfig(accountId: string, items: unknown[]): Promise<void> {
-    const payload: PredictionConfigNotification = {
+    const syncPayload: SyncNotification = {
       accountHash: this.accountHash(accountId),
       resource: 'prediction-config',
       action: 'updated',
       cursor: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const payload: PredictionConfigNotification = {
+      accountHash: this.accountHash(accountId),
+      resource: 'prediction-config',
+      action: 'updated',
+      cursor: syncPayload.cursor,
       items,
     };
 
     if (!this.publisher) {
+      this.localSyncSubject(accountId).next({ type: 'sync', data: syncPayload });
       this.localPredictionConfigSubject(accountId).next({ type: 'prediction-config', data: payload });
       return;
     }
@@ -99,6 +107,7 @@ export class SyncService implements OnModuleDestroy {
           throw error;
         }
       });
+      await this.publisher.publish(this.channel(accountId), JSON.stringify(syncPayload));
       await this.publisher.publish(this.predictionConfigChannel(accountId), JSON.stringify(payload));
     } catch (error) {
       this.logger.warn(`Redis prediction config publish failed: ${(error as Error).message}`);

@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, IsUUID, Matches, Min } from 'class-validator';
 
 export class CreateWeightLogDto {
   @IsDateString()
@@ -97,8 +97,9 @@ export class CreateDrinkLogDto {
   @IsDateString()
   occurredAt!: string;
 
-  @IsIn(['water', 'coffee', 'other'])
-  drinkType!: 'water' | 'coffee' | 'other';
+  @IsString()
+  @Matches(/^[a-z][a-z0-9_]*$/)
+  drinkType!: string;
 
   @IsOptional()
   @IsInt()
@@ -129,8 +130,9 @@ export class UpdateDrinkLogDto {
   occurredAt?: string;
 
   @IsOptional()
-  @IsIn(['water', 'coffee', 'other'])
-  drinkType?: 'water' | 'coffee' | 'other';
+  @IsString()
+  @Matches(/^[a-z][a-z0-9_]*$/)
+  drinkType?: string;
 
   @IsOptional()
   @IsInt()
@@ -274,8 +276,9 @@ export class CreateBathroomLogDto {
   @IsDateString()
   occurredAt!: string;
 
-  @IsIn(['urine', 'bowel'])
-  bathroomType!: 'urine' | 'bowel';
+  @IsString()
+  @Matches(/^[a-z][a-z0-9_]*$/)
+  bathroomType!: string;
 
   @IsOptional()
   @IsString()
@@ -296,8 +299,9 @@ export class UpdateBathroomLogDto {
   occurredAt?: string;
 
   @IsOptional()
-  @IsIn(['urine', 'bowel'])
-  bathroomType?: 'urine' | 'bowel';
+  @IsString()
+  @Matches(/^[a-z][a-z0-9_]*$/)
+  bathroomType?: string;
 
   @IsOptional()
   @IsString()

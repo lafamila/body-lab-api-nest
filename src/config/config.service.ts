@@ -86,4 +86,8 @@ export class BodyLabConfigService {
   get sessionMaxAgeSeconds(): number {
     return this.config.sessionMaxAgeSeconds;
   }
+
+  get localTimeZone(): string {
+    return this.config.localTimeZone;
+  }
 }

@@ -5,11 +5,9 @@ import { PredictionConfigRepository } from './prediction-config.repository';
 
 const REQUIRED_GLOBALS: { key: string; label: string }[] = [
   { key: 'fasting_threshold_hours', label: 'Fasting threshold hours' },
-  { key: 'fasting_max_hours', label: 'Fasting max hours' },
   { key: 'fasting_hour_kg', label: 'Fasting kg per hour' },
   { key: 'steps_10000_kg', label: 'Steps kg per 10000' },
-  { key: 'delta_min_kg', label: 'Delta min kg' },
-  { key: 'delta_max_kg', label: 'Delta max kg' },
+  { key: 'daily_base_delta_kg', label: 'Daily base delta kg' },
 ];
 const REQUIRED_KINDS: Exclude<PredictionConfigKind, 'global'>[] = ['meal', 'drink', 'bathroom', 'workout'];
 

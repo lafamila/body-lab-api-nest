@@ -38,6 +38,9 @@ describe('PredictionConfigRepository', () => {
     expect(database.query.mock.calls[0][1][9]).toBe(
       JSON.stringify({ description: 'Meal mass contribution.', unit: 'kg', requiredInSetup: false }),
     );
+    expect(database.query.mock.calls[0][0]).toContain(
+      'on conflict (account_id, kind, key) where account_id is not null',
+    );
     expect(item.metadata).toEqual({
       description: 'Meal mass contribution.',
       unit: 'kg',
@@ -86,11 +89,9 @@ describe('PredictionConfigService', () => {
     expect(status.requiresSetup).toBe(true);
     expect(repository.list).toHaveBeenCalledWith('account-1', false);
     expect(status.missingGlobalKeys).toEqual([
-      'fasting_max_hours',
       'fasting_hour_kg',
       'steps_10000_kg',
-      'delta_min_kg',
-      'delta_max_kg',
+      'daily_base_delta_kg',
     ]);
     expect(status.missingKinds).toEqual(['drink', 'bathroom', 'workout']);
     expect(status.requiredGlobals[0]).toMatchObject({

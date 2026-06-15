@@ -20,6 +20,7 @@ export interface AppConfig {
   oidcRedirectUri: string;
   sessionCookieName: string;
   sessionMaxAgeSeconds: number;
+  localTimeZone: string;
 }
 
 function intFromEnv(name: string, fallback: number): number {
@@ -81,5 +82,6 @@ export function loadAppConfig(): AppConfig {
     oidcRedirectUri: process.env.BODY_LAB_OIDC_REDIRECT_URI ?? 'bodylab-mac://auth/callback',
     sessionCookieName: process.env.BODY_LAB_SESSION_COOKIE_NAME ?? 'body_lab_session',
     sessionMaxAgeSeconds: intFromEnv('BODY_LAB_SESSION_MAX_AGE_SECONDS', 60 * 60 * 24 * 30),
+    localTimeZone: process.env.BODY_LAB_LOCAL_TIME_ZONE ?? 'Asia/Seoul',
   };
 }

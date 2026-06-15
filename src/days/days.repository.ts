@@ -1,8 +1,10 @@
 import { Injectable } from '@nestjs/common';
+import { BodyLabConfigService } from '../config/config.service';
 import { DatabaseService } from '../database/database.service';
 
 export interface DaySnapshot {
   date: string;
+  contextDates: string[];
   weight: Record<string, unknown> | null;
   meals: Record<string, unknown>[];
   drinks: Record<string, unknown>[];
@@ -19,30 +21,41 @@ export interface UpsertDayPayload {
 
 @Injectable()
 export class DaysRepository {
-  constructor(private readonly database: DatabaseService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly config: BodyLabConfigService,
+  ) {}
 
   async getDay(accountId: string, localDate: string): Promise<DaySnapshot> {
-    const [start, end] = this.bounds(localDate);
+    const dailyWeightClientEventId = `daily-weight:${localDate}`;
+    const contextDates = this.contextDates(localDate);
     const [weights, meals, drinks, bathroom, manualWorkouts, healthImports, predictions] = await Promise.all([
       this.database.query(
         `
           select *
           from body_weight_logs
-          where account_id = $1 and measured_at >= $2 and measured_at < $3 and deleted_at is null
-          order by measured_at asc
+          where account_id = $1
+            and deleted_at is null
+            and (
+              client_event_id = $3
+              or (measured_at at time zone $4)::date = $2::date
+            )
+          order by case when client_event_id = $3 then 0 else 1 end, measured_at asc
         `,
-        [accountId, start, end],
+        [accountId, localDate, dailyWeightClientEventId, this.config.localTimeZone],
       ),
-      this.dayRows('meal_logs', 'occurred_at', accountId, start, end),
-      this.dayRows('drink_logs', 'occurred_at', accountId, start, end),
-      this.dayRows('bathroom_logs', 'occurred_at', accountId, start, end),
-      this.dayRows('manual_workout_logs', 'occurred_at', accountId, start, end),
-      this.dayRows('health_import_summaries', 'period_start', accountId, start, end),
+      this.contextRows('meal_logs', 'occurred_at', accountId, localDate),
+      this.contextRows('drink_logs', 'occurred_at', accountId, localDate),
+      this.contextRows('bathroom_logs', 'occurred_at', accountId, localDate),
+      this.contextRows('manual_workout_logs', 'occurred_at', accountId, localDate),
+      this.contextRows('health_import_summaries', 'period_start', accountId, localDate),
       this.database.query(
         `
           select *
           from prediction_snapshots
-          where account_id = $1 and target_date = $2 and deleted_at is null
+          where account_id = $1
+            and target_date between ($2::date - interval '1 day') and ($2::date + interval '1 day')
+            and deleted_at is null
           order by generated_at desc
         `,
         [accountId, localDate],
@@ -51,6 +64,7 @@ export class DaysRepository {
 
     return {
       date: localDate,
+      contextDates,
       weight: weights.rows[0] ? this.toApi(weights.rows[0]) : null,
       meals: meals.rows.map((row) => this.toApi(row)),
       drinks: drinks.rows.map((row) => this.toApi(row)),
@@ -84,7 +98,6 @@ export class DaysRepository {
           return;
         }
 
-        const [start, end] = this.bounds(localDate);
         const updated = await query(
           `
             update body_weight_logs
@@ -95,12 +108,11 @@ export class DaysRepository {
                 updated_at = now(),
                 deleted_at = null
             where account_id = $1
-              and measured_at >= $2
-              and measured_at < $3
+              and (measured_at at time zone $2)::date = $3::date
               and deleted_at is null
             returning *
           `,
-          [accountId, start, end, measuredAt, payload.morningWeightKg, clientEventId],
+          [accountId, this.config.localTimeZone, localDate, measuredAt, payload.morningWeightKg, clientEventId],
         );
         if (!updated.rowCount) {
           await query(
@@ -117,23 +129,28 @@ export class DaysRepository {
     return this.getDay(accountId, localDate);
   }
 
-  private bounds(localDate: string): [string, string] {
-    const start = new Date(`${localDate}T00:00:00.000Z`);
-    const end = new Date(start);
-    end.setUTCDate(end.getUTCDate() + 1);
-    return [start.toISOString(), end.toISOString()];
-  }
-
-  private dayRows(table: string, column: string, accountId: string, start: string, end: string) {
+  private contextRows(table: string, column: string, accountId: string, localDate: string) {
     return this.database.query(
       `
         select *
         from ${table}
-        where account_id = $1 and ${column} >= $2 and ${column} < $3 and deleted_at is null
+        where account_id = $1
+          and (${column} at time zone $3)::date between ($2::date - interval '1 day') and ($2::date + interval '1 day')
+          and deleted_at is null
         order by ${column} asc
       `,
-      [accountId, start, end],
+      [accountId, localDate, this.config.localTimeZone],
     );
+  }
+
+  private contextDates(localDate: string): string[] {
+    const [year, month, day] = localDate.split('-').map((part) => Number.parseInt(part, 10));
+    const center = new Date(Date.UTC(year, month - 1, day));
+    return [-1, 0, 1].map((offset) => {
+      const date = new Date(center.getTime());
+      date.setUTCDate(center.getUTCDate() + offset);
+      return date.toISOString().slice(0, 10);
+    });
   }
 
   private toApi(row: Record<string, unknown>): Record<string, unknown> {
@@ -143,10 +160,14 @@ export class DaysRepository {
       measuredAt: row.measured_at,
       valueKg: row.value_kg === undefined ? undefined : Number(row.value_kg),
       occurredAt: row.occurred_at,
+      label: row.label,
+      size: row.size,
       drinkType: row.drink_type,
       amountMl: row.amount_ml,
       bathroomType: row.bathroom_type,
       durationMinutes: row.duration_minutes,
+      intensity: row.intensity,
+      sourceType: row.source_type,
       periodStart: row.period_start,
       periodEnd: row.period_end,
       metric: row.metric,

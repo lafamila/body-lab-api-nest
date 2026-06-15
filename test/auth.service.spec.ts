@@ -22,6 +22,7 @@ function config(): BodyLabConfigService {
     oidcRedirectUri: 'bodylab-mac://auth/callback',
     sessionCookieName: 'body_lab_session',
     sessionMaxAgeSeconds: 3600,
+    localTimeZone: 'Asia/Seoul',
   });
 }
 
