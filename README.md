@@ -15,6 +15,7 @@ The server is a data and sync hub. It stores events and client-generated predict
 - Local Mac/simulator URL: `http://localhost:3020`
 - Physical iPhone dev URL: `http://{LAN_IP}:3020`
 - Local dev should bind `HOST=0.0.0.0` when testing from another device on the LAN
+- Auth-side service setup is request-driven: submit a `body-lab` service onboarding request to `auth-api-nest`, approve it in `/admin`, then copy any one-time OIDC/service credential secrets into this service's `.env` or secret manager. Do not create or edit body-lab service specs through direct auth admin write endpoints.
 
 ## Environment
 
@@ -34,6 +35,8 @@ Copy `.env.example` to `.env` and configure:
 - `BODY_LAB_SESSION_COOKIE_NAME`: optional cookie name for browser-style clients
 - `BODY_LAB_SESSION_MAX_AGE_SECONDS`: body-lab session lifetime
 - `BODY_LAB_LOCAL_TIME_ZONE`: local date boundary used by day views and daily weight uniqueness; defaults to `Asia/Seoul`
+
+Permission definitions, OIDC client redirect URIs/scopes, and backend credential scopes are owned by the approved auth service onboarding request. Changes require a new onboarding update request rather than manual auth admin mutation.
 
 ## Commands
 
