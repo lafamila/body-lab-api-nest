@@ -33,7 +33,7 @@ Copy `.env.example` to `.env` and configure:
 - `AUTH_SERVICE_KEY`: defaults to `body-lab`
 - `AUTH_DENIED_PERMISSIONS`: comma-separated denied permission values; defaults to `visitor`
 - `BODY_LAB_OIDC_CLIENT_ID`: auth-api-nest OIDC client id registered for body-lab native clients
-- `BODY_LAB_OIDC_CLIENT_SECRET`: optional confidential client secret stored only on this API server
+- `BODY_LAB_OIDC_CLIENT_SECRET`: required confidential client secret stored only on this API server
 - `BODY_LAB_OIDC_REDIRECT_URI`: redirect URI registered for the OIDC client; this must stay distinct from any native app custom scheme return URI
 - `BODY_LAB_SESSION_COOKIE_NAME`: optional cookie name for browser-style clients
 - `BODY_LAB_SESSION_MAX_AGE_SECONDS`: body-lab session lifetime
