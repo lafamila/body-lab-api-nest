@@ -37,7 +37,25 @@ export class SessionController {
       setSessionCookie(response, this.config.sessionCookieName, result.session.sessionId, this.config.sessionMaxAgeSeconds);
     }
     if (result.redirectUri) {
-      response.redirect(result.redirectUri);
+      const retryUri = result.errorCode
+        ? this.buildRetryThroughAuthLogoutUri(result.loginTransactionId)
+        : undefined;
+      const accessRequestUri = result.accessRequestAvailable
+        ? this.buildAccessRequestUri(result.loginTransactionId)
+        : undefined;
+      response
+        .type('html')
+        .send(
+          callbackHtml({
+            loginTransactionId: result.loginTransactionId,
+            errorCode: result.errorCode,
+            error: result.error,
+            appOpenUri: result.redirectUri,
+            retryUri,
+            accessRequestUri,
+            accessRequested: result.accessRequested,
+          }),
+        );
       return;
     }
     if (result.session) {
@@ -46,7 +64,51 @@ export class SessionController {
     }
     response
       .type('html')
-      .send(callbackHtml(result.loginTransactionId, result.errorCode, result.error));
+      .send(callbackHtml({
+        loginTransactionId: result.loginTransactionId,
+        errorCode: result.errorCode,
+        error: result.error,
+      }));
+  }
+
+  @Get('oidc/request-access')
+  async requestAccess(
+    @Query('loginTransactionId') loginTransactionId: string | undefined,
+    @Res() response: Response,
+  ) {
+    if (!loginTransactionId) {
+      response
+        .type('html')
+        .send(callbackHtml({ errorCode: 'invalid_request', error: 'Missing login transaction id' }));
+      return;
+    }
+    const result = await this.sessions.requestTesterAccess(loginTransactionId);
+    response
+      .type('html')
+      .send(callbackHtml({
+        loginTransactionId: result.loginTransactionId,
+        errorCode: result.errorCode,
+        error: result.error,
+        appOpenUri: result.redirectUri,
+        retryUri: this.buildRetryThroughAuthLogoutUri(result.loginTransactionId),
+        accessRequested: true,
+      }));
+  }
+
+  @Get('oidc/retry')
+  retryOidcLogin(
+    @Query('loginTransactionId') loginTransactionId: string | undefined,
+    @Res() response: Response,
+  ) {
+    if (!loginTransactionId) {
+      response
+        .type('html')
+        .send(callbackHtml({ errorCode: 'invalid_request', error: 'Missing login transaction id' }));
+      return;
+    }
+    const retry = this.sessions.retryOidcLogin(loginTransactionId);
+    response.clearCookie(this.config.sessionCookieName, { path: '/' });
+    response.redirect(retry.authorizeUrl);
   }
 
   @Post('oidc/complete')
@@ -69,20 +131,69 @@ export class SessionController {
     response.clearCookie(this.config.sessionCookieName, { path: '/' });
     return { ok: true };
   }
+
+  private buildRetryThroughAuthLogoutUri(loginTransactionId: string | undefined): string | undefined {
+    if (!loginTransactionId) {
+      return undefined;
+    }
+    const retryUri = new URL('/session/oidc/retry', this.config.publicBaseUrl);
+    retryUri.searchParams.set('loginTransactionId', loginTransactionId);
+    const logoutUri = new URL('/logout', this.config.authApiBaseUrl);
+    logoutUri.searchParams.set('return_to', retryUri.toString());
+    return logoutUri.toString();
+  }
+
+  private buildAccessRequestUri(loginTransactionId: string | undefined): string | undefined {
+    if (!loginTransactionId) {
+      return undefined;
+    }
+    const requestUri = new URL('/session/oidc/request-access', this.config.publicBaseUrl);
+    requestUri.searchParams.set('loginTransactionId', loginTransactionId);
+    return requestUri.toString();
+  }
 }
 
-function callbackHtml(
-  loginTransactionId: string | undefined,
-  errorCode: string | undefined,
-  error: string | undefined,
-): string {
+function callbackHtml(input: {
+  loginTransactionId?: string;
+  errorCode?: string;
+  error?: string;
+  appOpenUri?: string;
+  retryUri?: string;
+  accessRequestUri?: string;
+  accessRequested?: boolean;
+}): string {
+  const {
+    loginTransactionId,
+    errorCode,
+    error,
+    appOpenUri,
+    retryUri,
+    accessRequestUri,
+    accessRequested,
+  } = input;
   const safeTransactionId = escapeHtml(loginTransactionId ?? '');
   const safeErrorCode = escapeHtml(errorCode ?? '');
   const safeError = escapeHtml(error ?? '');
+  const safeAppOpenUri = escapeHtml(appOpenUri ?? '');
+  const safeRetryUri = escapeHtml(retryUri ?? '');
+  const safeAccessRequestUri = escapeHtml(accessRequestUri ?? '');
+  const appOpenUriJson = JSON.stringify(appOpenUri ?? '');
   const title = error ? 'body-lab login failed' : 'body-lab login complete';
-  const body = error
-    ? `<p>Login failed.</p><p class="error">${safeError}</p>${safeErrorCode ? `<p class="muted">Code: ${safeErrorCode}</p>` : ''}`
-    : `<p>Login complete. Return to the body-lab app.</p><p class="muted">Transaction: ${safeTransactionId}</p>`;
+  const message = error
+    ? `<p>Login failed.</p><p class="error">${safeError}</p>${safeErrorCode ? `<p class="muted">Code: ${safeErrorCode}</p>` : ''}${accessRequested ? '<p class="notice">권한 요청을 보냈습니다.</p>' : ''}`
+    : `<p>Login complete.</p><p class="muted">Transaction: ${safeTransactionId}</p>`;
+  const openApp = appOpenUri
+    ? `<a class="button" id="open-app" href="${safeAppOpenUri}">Open body-lab app</a>
+       <p class="muted">If the app did not open automatically, use the button above.</p>`
+    : '';
+  const retryLogin = retryUri
+    ? `<a class="button" id="retry-login" href="${safeRetryUri}">다시 로그인하기</a>
+       <p class="muted">This clears the current auth login session before restarting.</p>`
+    : '';
+  const requestAccess = accessRequestUri
+    ? `<a class="button" id="request-access" href="${safeAccessRequestUri}">권한 요청하기</a>
+       <p class="muted">Request tester access for body-lab.</p>`
+    : '';
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -90,14 +201,54 @@ function callbackHtml(
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${title}</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 32px; color: #17202a; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      color: #17202a;
+      background: #f6f7f9;
+    }
+    main {
+      width: min(360px, calc(100vw - 32px));
+      display: grid;
+      gap: 12px;
+    }
+    h1 { margin: 0; font-size: 20px; }
+    p { margin: 0; }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 40px;
+      padding: 0 14px;
+      border-radius: 6px;
+      background: #17202a;
+      color: #ffffff;
+      font-weight: 600;
+      text-decoration: none;
+    }
     .error { color: #b42318; }
+    .notice { color: #1769aa; font-weight: 600; }
     .muted { color: #667085; font-size: 13px; }
   </style>
 </head>
 <body>
-  <h1>${title}</h1>
-  ${body}
+  <main>
+    <h1>${title}</h1>
+    ${message}
+    ${error ? requestAccess || retryLogin : openApp}
+  </main>
+  ${
+    appOpenUri && !error
+      ? `<script>
+    window.setTimeout(() => {
+      window.location.href = ${appOpenUriJson};
+    }, 250);
+  </script>`
+      : ''
+  }
 </body>
 </html>`;
 }

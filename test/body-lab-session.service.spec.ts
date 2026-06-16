@@ -132,6 +132,30 @@ describe('BodyLabSessionService', () => {
     expect(() => service.completeOidcLogin(started.loginTransactionId)).toThrow(UnauthorizedException);
   });
 
+  it('starts a fresh OIDC transaction from a failed login transaction', async () => {
+    const service = new BodyLabSessionService(config(), authService() as unknown as AuthService);
+    const started = service.startOidcLogin({
+      clientKind: 'mac',
+      clientInstanceId: 'mac-1',
+      deviceName: 'Body Lab Mac',
+      returnUri: 'bodylab-mac://auth/callback',
+    });
+    const state = new URL(started.authorizeUrl).searchParams.get('state') ?? '';
+
+    await service.completeOidcCallback({
+      state,
+      error: 'access_denied',
+      errorDescription: 'body-lab permission is required',
+    });
+    const retry = service.retryOidcLogin(started.loginTransactionId);
+    const retryAuthorizeUrl = new URL(retry.authorizeUrl);
+
+    expect(retry.loginTransactionId).not.toBe(started.loginTransactionId);
+    expect(retryAuthorizeUrl.searchParams.get('state')).toBeTruthy();
+    expect(retryAuthorizeUrl.searchParams.get('state')).not.toBe(state);
+    expect(retryAuthorizeUrl.searchParams.get('client_id')).toBe('body-lab-api');
+  });
+
   it('rejects completing before the auth callback finishes', () => {
     const service = new BodyLabSessionService(config(), authService() as unknown as AuthService);
     const started = service.startOidcLogin({});
@@ -139,18 +163,22 @@ describe('BodyLabSessionService', () => {
     expect(() => service.completeOidcLogin(started.loginTransactionId)).toThrow(UnauthorizedException);
   });
 
-  it('records callback failure when token validation rejects visitor access', async () => {
+  it('records callback failure without sending access request when token validation rejects visitor access', async () => {
     const auth = authService();
     auth.verifyBearerToken.mockRejectedValue(new UnauthorizedException('body-lab non-visitor permission is required'));
     const service = new BodyLabSessionService(config(), auth as unknown as AuthService);
-    global.fetch = jest.fn().mockResolvedValue({
+    const tokenResponse = {
       ok: true,
       json: async () => ({
         access_token: 'visitor-access',
         refresh_token: 'refresh-1',
         expires_in: 3600,
       }),
-    } as Response) as typeof fetch;
+    } as Response;
+    const requestFetch = jest
+      .fn()
+      .mockResolvedValueOnce(tokenResponse);
+    global.fetch = requestFetch as typeof fetch;
 
     const started = service.startOidcLogin({ returnUri: 'bodylab://auth/callback' });
     const state = new URL(started.authorizeUrl).searchParams.get('state') ?? '';
@@ -160,6 +188,56 @@ describe('BodyLabSessionService', () => {
     expect(callback.error).toContain('body-lab non-visitor permission is required');
     expect(callback.redirectUri).toContain('status=error');
     expect(callback.redirectUri).toContain('errorCode=access_denied');
+    expect(callback.accessRequestAvailable).toBe(true);
+    expect(callback.accessRequested).toBe(false);
+    expect(requestFetch).toHaveBeenCalledTimes(1);
     expect(() => service.completeOidcLogin(started.loginTransactionId)).toThrow(UnauthorizedException);
+  });
+
+  it('sends tester access request only when explicitly requested after visitor rejection', async () => {
+    const auth = authService();
+    auth.verifyBearerToken.mockRejectedValue(new UnauthorizedException('body-lab non-visitor permission is required'));
+    const service = new BodyLabSessionService(config(), auth as unknown as AuthService);
+    const tokenResponse = {
+      ok: true,
+      json: async () => ({
+        access_token: 'visitor-access',
+        refresh_token: 'refresh-1',
+        expires_in: 3600,
+      }),
+    } as Response;
+    const applicationResponse = {
+      ok: true,
+      json: async () => ({ id: 'application-1' }),
+    } as Response;
+    const requestFetch = jest
+      .fn()
+      .mockResolvedValueOnce(tokenResponse)
+      .mockResolvedValueOnce(applicationResponse);
+    global.fetch = requestFetch as typeof fetch;
+
+    const started = service.startOidcLogin({ returnUri: 'bodylab://auth/callback' });
+    const state = new URL(started.authorizeUrl).searchParams.get('state') ?? '';
+    await service.completeOidcCallback({ code: 'code-1', state });
+    const result = await service.requestTesterAccess(started.loginTransactionId);
+
+    expect(requestFetch).toHaveBeenCalledWith(
+      'https://auth.example.test/api/service-applications',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          authorization: 'Bearer visitor-access',
+        }),
+        body: expect.stringContaining('"serviceKey":"body-lab"'),
+      }),
+    );
+    expect(requestFetch).toHaveBeenCalledWith(
+      'https://auth.example.test/api/service-applications',
+      expect.objectContaining({
+        body: expect.stringContaining('tester access'),
+      }),
+    );
+    expect(result.accessRequested).toBe(true);
+    expect(result.accessRequestAvailable).toBe(false);
   });
 });

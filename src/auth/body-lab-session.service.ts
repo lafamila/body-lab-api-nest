@@ -32,6 +32,8 @@ interface LoginTransaction {
   sessionId?: string;
   errorCode?: string;
   error?: string;
+  accessRequestToken?: string;
+  accessRequestedAt?: number;
 }
 
 interface TokenResponse {
@@ -44,6 +46,16 @@ export interface SessionResponse {
   sessionId: string;
   user: AuthAccount;
   expiresAt: string;
+}
+
+export interface OidcCallbackResult {
+  loginTransactionId?: string;
+  redirectUri?: string;
+  session?: SessionResponse;
+  error?: string;
+  errorCode?: string;
+  accessRequestAvailable?: boolean;
+  accessRequested?: boolean;
 }
 
 @Injectable()
@@ -88,7 +100,7 @@ export class BodyLabSessionService {
     state?: string;
     error?: string;
     errorDescription?: string;
-  }): Promise<{ loginTransactionId?: string; redirectUri?: string; session?: SessionResponse; error?: string; errorCode?: string }> {
+  }): Promise<OidcCallbackResult> {
     const transaction = this.findTransactionByState(input.state);
     if (!transaction) {
       return { errorCode: 'invalid_state', error: 'Invalid or expired login state' };
@@ -115,8 +127,9 @@ export class BodyLabSessionService {
         error: transaction.error,
       };
     }
+    let token: TokenResponse | undefined;
     try {
-      const token = await this.requestToken({
+      token = await this.requestToken({
         grant_type: 'authorization_code',
         client_id: this.config.oidcClientId,
         client_secret: this.config.oidcClientSecret,
@@ -137,11 +150,16 @@ export class BodyLabSessionService {
       transaction.status = 'failed';
       transaction.errorCode = this.callbackErrorCode(error);
       transaction.error = error instanceof Error ? error.message : 'Login failed';
+      if (token?.access_token && this.shouldOfferTesterAccessRequest(error)) {
+        transaction.accessRequestToken = token.access_token;
+      }
       return {
         loginTransactionId: transaction.id,
         redirectUri: this.returnUriWithResult(transaction, 'error', transaction.errorCode, transaction.error),
         errorCode: transaction.errorCode,
         error: transaction.error,
+        accessRequestAvailable: Boolean(transaction.accessRequestToken),
+        accessRequested: Boolean(transaction.accessRequestedAt),
       };
     }
   }
@@ -169,6 +187,46 @@ export class BodyLabSessionService {
     transaction.status = 'consumed';
     this.loginTransactions.delete(loginTransactionId);
     return this.toSessionResponse(session);
+  }
+
+  retryOidcLogin(loginTransactionId: string): {
+    authorizeUrl: string;
+    loginTransactionId: string;
+    expiresAt: string;
+  } {
+    const transaction = this.loginTransactions.get(loginTransactionId);
+    if (!transaction || transaction.expiresAt <= Date.now()) {
+      if (transaction) {
+        this.loginTransactions.delete(loginTransactionId);
+      }
+      throw new UnauthorizedException('Login transaction expired');
+    }
+    return this.startOidcLogin({
+      clientKind: transaction.clientKind,
+      clientInstanceId: transaction.clientInstanceId,
+      deviceName: transaction.deviceName,
+      returnUri: transaction.returnUri,
+    });
+  }
+
+  async requestTesterAccess(loginTransactionId: string): Promise<OidcCallbackResult> {
+    const transaction = this.loginTransactions.get(loginTransactionId);
+    if (!transaction || transaction.expiresAt <= Date.now()) {
+      if (transaction) {
+        this.loginTransactions.delete(loginTransactionId);
+      }
+      throw new UnauthorizedException('Login transaction expired');
+    }
+    if (transaction.accessRequestedAt) {
+      return this.failedTransactionResult(transaction);
+    }
+    if (!transaction.accessRequestToken) {
+      throw new UnauthorizedException('Access request is not available for this login transaction');
+    }
+    await this.requestTesterAccessWithToken(transaction.accessRequestToken);
+    transaction.accessRequestedAt = Date.now();
+    transaction.accessRequestToken = undefined;
+    return this.failedTransactionResult(transaction);
   }
 
   async requireSession(sessionId: string | undefined): Promise<BodyLabSession> {
@@ -359,6 +417,46 @@ export class BodyLabSessionService {
       return 'token_exchange_failed';
     }
     return 'login_failed';
+  }
+
+  private shouldOfferTesterAccessRequest(error: unknown): boolean {
+    return (
+      error instanceof Error &&
+      error.message.toLowerCase().includes('non-visitor permission')
+    );
+  }
+
+  private async requestTesterAccessWithToken(accessToken: string): Promise<void> {
+    const response = await fetch(`${this.config.authApiBaseUrl}/api/service-applications`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        serviceKey: this.config.authServiceKey,
+        message: 'Requesting tester access for body-lab after visitor login was denied.',
+      }),
+    });
+    if (!response.ok) {
+      throw new UnauthorizedException(await responseText(response, 'Service access request failed'));
+    }
+  }
+
+  private failedTransactionResult(transaction: LoginTransaction): OidcCallbackResult {
+    return {
+      loginTransactionId: transaction.id,
+      redirectUri: this.returnUriWithResult(
+        transaction,
+        'error',
+        transaction.errorCode,
+        transaction.error,
+      ),
+      errorCode: transaction.errorCode,
+      error: transaction.error,
+      accessRequestAvailable: Boolean(transaction.accessRequestToken),
+      accessRequested: Boolean(transaction.accessRequestedAt),
+    };
   }
 }
 
