@@ -7,7 +7,7 @@ NestJS API server for body-lab: account-scoped diet/body research data storage, 
 ## 워크스페이스 대원칙 (canonical)
 이 레포는 `../CLAUDE.md` 의 **DEVELOPMENT PRINCIPLES** 섹션을 따른다. 핵심 재진술:
 
-1. **인증** — `auth-api-nest` 와 통합한다. serviceKey는 `body-lab`, audience는 `service:body-lab` 이다. body-lab permission 이 존재하고 `visitor` 가 아니면 이용 가능하며, `visitor` 또는 permission 없음은 no-access로 처리한다.
+1. **인증** — `auth-api-nest` 와 통합한다. serviceKey는 `body-lab`, audience는 `service:body-lab` 이다. `body-lab-api-nest` 가 `body-lab-api` confidential OIDC client 를 소유하고, native app 에는 body-lab opaque session 만 발급한다. body-lab permission 이 존재하고 `visitor` 가 아니면 이용 가능하며, `visitor` 또는 permission 없음은 no-access로 처리한다.
 2. **기능 단위 커밋** — 한 기능이 계획-구현-검토를 통과하면 즉시 1개의 커밋. 여러 기능을 묶지 않는다.
 3. **Agent co-author 제외** — Codex, Claude, OmX 등 agent/tool 저자를 `Co-authored-by` trailer 로 추가하지 않는다. 사용자가 명시적으로 요청한 경우만 예외.
 4. **계획 → 구현 → 검토** — 계획 단계에서 검토 통과 기준(어떤 테스트/명령이 통과해야 "done"인지)을 명시한다.
@@ -31,13 +31,18 @@ NestJS API server for body-lab: account-scoped diet/body research data storage, 
 - Dev access: support localhost and LAN IP access for physical iPhone testing
 - Database: PostgreSQL database `body_lab`
 - Realtime: shared Redis, designed for account-scoped sync notifications and future shared use by other services
-- Auth: `AUTH_VIA_AUTH_API_NEST`
+- Auth: `AUTH_VIA_AUTH_API_NEST`; this API is the body-lab auth BFF/session boundary
 - Permission model: any non-`visitor` body-lab permission can use the service; `visitor` means no access
+- OIDC client: `body-lab-api` confidential client registered in `auth-api-nest`
+- OIDC callback:
+  - local: `http://localhost:3020/session/oidc/callback`
+  - production: `https://lab.lafamila.xyz/session/oidc/callback`
+- App-facing session: opaque body-lab session returned by `/session/oidc/complete`; clients send it via `X-Body-Lab-Session`
 - Server role: source of truth for account-scoped event data and sync, not the main analytics engine
 - Prediction: store client-generated rule-based v1 prediction snapshots; do not host ML in current scope
 
 ## Expected Modules
-- `auth` — JWKS/discovery/token validation and service permission guard
+- `auth` — OIDC start/callback/complete, session issuance, JWKS/discovery/token validation, and service permission guard
 - `taxonomy` — meal/exercise categories served to clients
 - `logs` — weight, meal, drink, activity, manual workout, bathroom events
 - `health-imports` — HealthKit-derived summaries uploaded by clients
@@ -59,7 +64,8 @@ docker build -t body-lab-api-nest .
 ```
 
 ## Security
-- Never store auth client secrets in native apps. Native clients are public OIDC clients with PKCE.
+- Never store auth client secrets in native apps. `BODY_LAB_OIDC_CLIENT_SECRET` belongs only in this API server's `.env` or production secret manager.
+- Native apps must not store auth refresh tokens or auth service credentials. They store only the body-lab opaque session and send it as `X-Body-Lab-Session`.
 - Validate JWT issuer, JWKS signature, expiration, audience `service:body-lab`, service claim key `body-lab`, and reject missing or `visitor` permission.
 - All body-lab data access must be scoped by auth account id.
 - Redis sync payloads should contain minimal identifiers/cursors, not full sensitive health data unless there is a clear need.

@@ -1,5 +1,5 @@
 ---
-status: PREPARED
+status: IN_PROGRESS
 summary: "body-lab-api-nest 가 OIDC confidential client 와 body-lab session 발급을 담당한다."
 ---
 
@@ -74,10 +74,10 @@ Canonical orchestration plan:
    - session token 은 response 로 한 번 내려주고 앱은 Keychain 에 저장한다.
    - 같은 transaction 으로 session 을 반복 수령할 수 없게 처리한다.
 
-7. 기존 direct ID/password login 정리
-   - 현재 `POST /session/login` 이 auth `/login` 에 ID/PW 를 proxy 하는 구조라면 새 기본 경로에서는 사용하지 않게 한다.
-   - 제거가 테스트/API 호환을 크게 깨면 `legacy` 로 명확히 격리하고 native app plan 에서는 사용하지 않는다.
-   - 유지하는 경우에도 새 CLAUDE.md/Auth docs 에 deprecated 로 적고, future removal follow-up 을 보고한다.
+7. 기존 direct ID/password login 제거
+   - 현재 `POST /session/login` 이 auth `/login` 에 ID/PW 를 proxy 하는 구조라면 제거한다.
+   - body-lab-api-nest 는 사용자 비밀번호를 받는 login endpoint 를 제공하지 않는다.
+   - 로그인은 `POST /session/oidc/start` -> auth browser flow -> `GET /session/oidc/callback` -> `POST /session/oidc/complete` 만 지원한다.
 
 8. Session guard / refresh / logout 유지
    - `X-Body-Lab-Session` 과 HttpOnly cookie extraction 은 유지한다.
@@ -114,7 +114,7 @@ Canonical orchestration plan:
 - 최종 endpoint path / request / response contract.
 - `body-lab-app-swift` 가 구현해야 할 login sequence.
 - 새로 필요한 `.env` key 와 approval modal 에서 사용자가 복사해야 하는 값.
-- direct `/session/login` 을 제거했는지, legacy 로 남겼는지.
+- direct `/session/login` 제거 결과와 영향을 받은 internal/admin 화면.
 - session persistence 가 in-memory 로 남아 있다면 그 위험.
 
 ## Decision Escalation

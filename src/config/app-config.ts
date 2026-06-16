@@ -18,6 +18,7 @@ export interface AppConfig {
   oidcClientId: string;
   oidcClientSecret?: string;
   oidcRedirectUri: string;
+  oidcLoginTransactionTtlSeconds: number;
   sessionCookieName: string;
   sessionMaxAgeSeconds: number;
   localTimeZone: string;
@@ -77,9 +78,10 @@ export function loadAppConfig(): AppConfig {
     authServiceKey: process.env.AUTH_SERVICE_KEY ?? 'body-lab',
     authDeniedPermissions: listFromEnv('AUTH_DENIED_PERMISSIONS', ['visitor']),
     authApiBaseUrl: process.env.AUTH_API_BASE_URL ?? process.env.AUTH_ISSUER_URL ?? 'http://localhost:3032',
-    oidcClientId: process.env.BODY_LAB_OIDC_CLIENT_ID ?? 'body-lab-mac',
+    oidcClientId: process.env.BODY_LAB_OIDC_CLIENT_ID ?? 'body-lab-api',
     oidcClientSecret: process.env.BODY_LAB_OIDC_CLIENT_SECRET,
-    oidcRedirectUri: process.env.BODY_LAB_OIDC_REDIRECT_URI ?? 'bodylab-mac://auth/callback',
+    oidcRedirectUri: process.env.BODY_LAB_OIDC_REDIRECT_URI ?? 'http://localhost:3020/session/oidc/callback',
+    oidcLoginTransactionTtlSeconds: intFromEnv('BODY_LAB_OIDC_LOGIN_TRANSACTION_TTL_SECONDS', 300),
     sessionCookieName: process.env.BODY_LAB_SESSION_COOKIE_NAME ?? 'body_lab_session',
     sessionMaxAgeSeconds: intFromEnv('BODY_LAB_SESSION_MAX_AGE_SECONDS', 60 * 60 * 24 * 30),
     localTimeZone: process.env.BODY_LAB_LOCAL_TIME_ZONE ?? 'Asia/Seoul',

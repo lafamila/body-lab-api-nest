@@ -1,14 +1,6 @@
 import { IsIn, IsOptional, IsString, MinLength } from 'class-validator';
 
-export class SessionLoginDto {
-  @IsString()
-  @MinLength(1)
-  loginId!: string;
-
-  @IsString()
-  @MinLength(1)
-  password!: string;
-
+export class OidcStartLoginDto {
   @IsOptional()
   @IsIn(['ios', 'mac'])
   clientKind?: 'ios' | 'mac';
@@ -20,4 +12,14 @@ export class SessionLoginDto {
   @IsOptional()
   @IsString()
   deviceName?: string;
+
+  @IsOptional()
+  @IsString()
+  returnUri?: string;
+}
+
+export class OidcCompleteLoginDto {
+  @IsString()
+  @MinLength(16)
+  loginTransactionId!: string;
 }

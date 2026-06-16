@@ -252,11 +252,9 @@ const loginHtml = `<!doctype html>
   <h1>body-lab admin</h1>
   <section>
     <h2>Login</h2>
-    <form id="loginForm" class="row">
-      <input id="loginId" placeholder="ID" autocomplete="username">
-      <input id="password" placeholder="Password" type="password" autocomplete="current-password">
-      <button id="loginButton" type="submit">Login</button>
-    </form>
+    <div class="row">
+      <button id="loginButton" type="button">Login with Teddy Auth</button>
+    </div>
     <div id="statusBar" class="status-bar"></div>
   </section>
 </main>
@@ -286,14 +284,19 @@ async function api(path, options = {}) {
     endLoading();
   }
 }
-document.getElementById('loginForm').addEventListener('submit', async (event) => {
-  event.preventDefault();
+document.getElementById('loginButton').addEventListener('click', async () => {
   setStatus('');
   try {
-    const loginId = document.getElementById('loginId').value;
-    const password = document.getElementById('password').value;
-    await api('/session/login', { method: 'POST', body: JSON.stringify({ loginId, password, clientKind: 'mac', clientInstanceId: 'admin-console', deviceName: 'admin' }) });
-    window.location.href = '/admin';
+    const result = await api('/session/oidc/start', {
+      method: 'POST',
+      body: JSON.stringify({
+        clientKind: 'mac',
+        clientInstanceId: 'admin-console',
+        deviceName: 'admin',
+        returnUri: window.location.origin + '/admin'
+      })
+    });
+    window.location.href = result.authorizeUrl;
   } catch (error) {
     setStatus('Login failed', 'error');
   }

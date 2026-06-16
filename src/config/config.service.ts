@@ -79,6 +79,10 @@ export class BodyLabConfigService {
     return this.config.oidcRedirectUri;
   }
 
+  get oidcLoginTransactionTtlSeconds(): number {
+    return this.config.oidcLoginTransactionTtlSeconds;
+  }
+
   get sessionCookieName(): string {
     return this.config.sessionCookieName;
   }
