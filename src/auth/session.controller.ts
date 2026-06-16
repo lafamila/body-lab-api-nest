@@ -46,7 +46,7 @@ export class SessionController {
     }
     response
       .type('html')
-      .send(callbackHtml(result.loginTransactionId, result.error));
+      .send(callbackHtml(result.loginTransactionId, result.errorCode, result.error));
   }
 
   @Post('oidc/complete')
@@ -71,12 +71,17 @@ export class SessionController {
   }
 }
 
-function callbackHtml(loginTransactionId: string | undefined, error: string | undefined): string {
+function callbackHtml(
+  loginTransactionId: string | undefined,
+  errorCode: string | undefined,
+  error: string | undefined,
+): string {
   const safeTransactionId = escapeHtml(loginTransactionId ?? '');
+  const safeErrorCode = escapeHtml(errorCode ?? '');
   const safeError = escapeHtml(error ?? '');
   const title = error ? 'body-lab login failed' : 'body-lab login complete';
   const body = error
-    ? `<p>Login failed.</p><p class="error">${safeError}</p>`
+    ? `<p>Login failed.</p><p class="error">${safeError}</p>${safeErrorCode ? `<p class="muted">Code: ${safeErrorCode}</p>` : ''}`
     : `<p>Login complete. Return to the body-lab app.</p><p class="muted">Transaction: ${safeTransactionId}</p>`;
   return `<!doctype html>
 <html lang="en">

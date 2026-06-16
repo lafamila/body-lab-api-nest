@@ -59,4 +59,18 @@ describe('PredictionConfigController admin backup', () => {
       data: { weights: [{ measuredAt: '2026-06-11T00:00:00.000Z', valueKg: '104.9' }] },
     });
   });
+
+  it('renders the hosted login entry button as 로그인', () => {
+    const controller = new PredictionConfigController({} as never, {} as never, {} as never);
+    const response = {
+      type: jest.fn().mockReturnThis(),
+      send: jest.fn(),
+    };
+
+    controller.adminLogin(response as never);
+
+    expect(response.type).toHaveBeenCalledWith('html');
+    expect(response.send).toHaveBeenCalledWith(expect.stringContaining('>로그인<'));
+    expect(response.send).not.toHaveBeenCalledWith(expect.stringContaining('Login with Teddy Auth'));
+  });
 });

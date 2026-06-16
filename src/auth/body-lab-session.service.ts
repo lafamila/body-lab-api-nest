@@ -30,6 +30,7 @@ interface LoginTransaction {
   expiresAt: number;
   status: 'pending' | 'completed' | 'failed' | 'consumed';
   sessionId?: string;
+  errorCode?: string;
   error?: string;
 }
 
@@ -87,26 +88,30 @@ export class BodyLabSessionService {
     state?: string;
     error?: string;
     errorDescription?: string;
-  }): Promise<{ loginTransactionId?: string; redirectUri?: string; session?: SessionResponse; error?: string }> {
+  }): Promise<{ loginTransactionId?: string; redirectUri?: string; session?: SessionResponse; error?: string; errorCode?: string }> {
     const transaction = this.findTransactionByState(input.state);
     if (!transaction) {
-      return { error: 'Invalid or expired login state' };
+      return { errorCode: 'invalid_state', error: 'Invalid or expired login state' };
     }
     if (input.error) {
       transaction.status = 'failed';
+      transaction.errorCode = input.error;
       transaction.error = input.errorDescription ?? input.error;
       return {
         loginTransactionId: transaction.id,
-        redirectUri: this.returnUriWithResult(transaction, 'error', transaction.error),
+        redirectUri: this.returnUriWithResult(transaction, 'error', transaction.errorCode, transaction.error),
+        errorCode: transaction.errorCode,
         error: transaction.error,
       };
     }
     if (!input.code) {
       transaction.status = 'failed';
+      transaction.errorCode = 'authorization_code_missing';
       transaction.error = 'Authorization code missing';
       return {
         loginTransactionId: transaction.id,
-        redirectUri: this.returnUriWithResult(transaction, 'error', transaction.error),
+        redirectUri: this.returnUriWithResult(transaction, 'error', transaction.errorCode, transaction.error),
+        errorCode: transaction.errorCode,
         error: transaction.error,
       };
     }
@@ -130,10 +135,12 @@ export class BodyLabSessionService {
       };
     } catch (error) {
       transaction.status = 'failed';
+      transaction.errorCode = this.callbackErrorCode(error);
       transaction.error = error instanceof Error ? error.message : 'Login failed';
       return {
         loginTransactionId: transaction.id,
-        redirectUri: this.returnUriWithResult(transaction, 'error', transaction.error),
+        redirectUri: this.returnUriWithResult(transaction, 'error', transaction.errorCode, transaction.error),
+        errorCode: transaction.errorCode,
         error: transaction.error,
       };
     }
@@ -325,6 +332,7 @@ export class BodyLabSessionService {
   private returnUriWithResult(
     transaction: LoginTransaction,
     status: 'success' | 'error',
+    errorCode?: string,
     error?: string,
   ): string | undefined {
     if (!transaction.returnUri) {
@@ -333,10 +341,24 @@ export class BodyLabSessionService {
     const url = new URL(transaction.returnUri);
     url.searchParams.set('loginTransactionId', transaction.id);
     url.searchParams.set('status', status);
+    if (errorCode) {
+      url.searchParams.set('errorCode', errorCode);
+    }
     if (error) {
       url.searchParams.set('error', error);
     }
     return url.toString();
+  }
+
+  private callbackErrorCode(error: unknown): string {
+    if (error instanceof UnauthorizedException) {
+      const message = error.message.toLowerCase();
+      if (message.includes('non-visitor permission') || message.includes('access denied')) {
+        return 'access_denied';
+      }
+      return 'token_exchange_failed';
+    }
+    return 'login_failed';
   }
 }
 

@@ -251,9 +251,9 @@ const loginHtml = `<!doctype html>
 <main>
   <h1>body-lab admin</h1>
   <section>
-    <h2>Login</h2>
+    <h2>로그인</h2>
     <div class="row">
-      <button id="loginButton" type="button">Login with Teddy Auth</button>
+      <button id="loginButton" type="button">로그인</button>
     </div>
     <div id="statusBar" class="status-bar"></div>
   </section>
@@ -298,7 +298,7 @@ document.getElementById('loginButton').addEventListener('click', async () => {
     });
     window.location.href = result.authorizeUrl;
   } catch (error) {
-    setStatus('Login failed', 'error');
+    setStatus('로그인 실패', 'error');
   }
 });
 fetch('/session/me').then((response) => {

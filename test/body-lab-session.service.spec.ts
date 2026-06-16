@@ -65,8 +65,12 @@ describe('BodyLabSessionService', () => {
     expect(authorizeUrl.pathname).toBe('/oauth/authorize');
     expect(authorizeUrl.searchParams.get('client_id')).toBe('body-lab-api');
     expect(authorizeUrl.searchParams.get('redirect_uri')).toBe('http://localhost:3020/session/oidc/callback');
+    expect(authorizeUrl.searchParams.get('redirect_uri')).not.toBe('bodylab://auth/callback');
     expect(authorizeUrl.searchParams.get('scope')).toBe('openid profile email service.permission');
+    expect(authorizeUrl.searchParams.get('state')).toBeTruthy();
+    expect(authorizeUrl.searchParams.get('code_challenge')).toBeTruthy();
     expect(authorizeUrl.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(started.authorizeUrl).not.toContain('client-secret');
   });
 
   it('creates and consumes an opaque body-lab session after callback token exchange', async () => {
@@ -89,7 +93,11 @@ describe('BodyLabSessionService', () => {
 
     expect(callback.redirectUri).toContain('bodylab://auth/callback');
     expect(callback.redirectUri).toContain('status=success');
+    expect(callback.redirectUri).toContain(`loginTransactionId=${started.loginTransactionId}`);
+    expect(callback.redirectUri).not.toContain(encodeURIComponent('http://localhost:3020/session/oidc/callback'));
     expect(callback.session?.sessionId).toBe(completed.sessionId);
+    expect(callback.session).not.toHaveProperty('accessToken');
+    expect(callback.session).not.toHaveProperty('refreshToken');
     expect(completed.user.permission).toBe('owner');
     expect(auth.verifyBearerToken).toHaveBeenCalledWith('access-1');
     expect(tokenFetch).toHaveBeenCalledWith(
@@ -99,6 +107,28 @@ describe('BodyLabSessionService', () => {
         body: expect.stringContaining('"client_id":"body-lab-api"'),
       }),
     );
+    expect(() => service.completeOidcLogin(started.loginTransactionId)).toThrow(UnauthorizedException);
+  });
+
+  it('passes hosted auth callback denial to the native return URI with a machine-readable error code', async () => {
+    const service = new BodyLabSessionService(config(), authService() as unknown as AuthService);
+    const started = service.startOidcLogin({ returnUri: 'bodylab://auth/callback' });
+    const state = new URL(started.authorizeUrl).searchParams.get('state') ?? '';
+
+    const callback = await service.completeOidcCallback({
+      state,
+      error: 'access_denied',
+      errorDescription: 'body-lab permission is required',
+    });
+
+    expect(callback.errorCode).toBe('access_denied');
+    expect(callback.error).toBe('body-lab permission is required');
+    const redirectUri = new URL(callback.redirectUri ?? '');
+    expect(`${redirectUri.protocol}//${redirectUri.host}${redirectUri.pathname}`).toBe('bodylab://auth/callback');
+    expect(redirectUri.searchParams.get('loginTransactionId')).toBe(started.loginTransactionId);
+    expect(redirectUri.searchParams.get('status')).toBe('error');
+    expect(redirectUri.searchParams.get('errorCode')).toBe('access_denied');
+    expect(redirectUri.searchParams.get('error')).toBe('body-lab permission is required');
     expect(() => service.completeOidcLogin(started.loginTransactionId)).toThrow(UnauthorizedException);
   });
 
@@ -122,11 +152,14 @@ describe('BodyLabSessionService', () => {
       }),
     } as Response) as typeof fetch;
 
-    const started = service.startOidcLogin({});
+    const started = service.startOidcLogin({ returnUri: 'bodylab://auth/callback' });
     const state = new URL(started.authorizeUrl).searchParams.get('state') ?? '';
     const callback = await service.completeOidcCallback({ code: 'code-1', state });
 
+    expect(callback.errorCode).toBe('access_denied');
     expect(callback.error).toContain('body-lab non-visitor permission is required');
+    expect(callback.redirectUri).toContain('status=error');
+    expect(callback.redirectUri).toContain('errorCode=access_denied');
     expect(() => service.completeOidcLogin(started.loginTransactionId)).toThrow(UnauthorizedException);
   });
 });
