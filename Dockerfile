@@ -16,6 +16,6 @@ ENV NODE_ENV=production
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
-COPY src/database/migrations ./src/database/migrations
+COPY src/database/migrations ./dist/database/migrations
 EXPOSE 3020
 CMD ["sh", "-c", "node dist/database/migrate.js && node dist/main.js"]
