@@ -1,6 +1,8 @@
 ---
-status: IN_PROGRESS
+status: COMPLETED
 summary: "body-lab-api-nest 가 OIDC confidential client 와 body-lab session 발급을 담당한다."
+completed_at: 2026-06-16
+completion_reason: "OIDC start/callback/complete flow 와 opaque body-lab session 발급이 구현되고 lint/unit/build/e2e/local smoke 검증이 통과함."
 ---
 
 # BODY_LAB_API_AUTH_BFF — body-lab-api-nest execution plan
