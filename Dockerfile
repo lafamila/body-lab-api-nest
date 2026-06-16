@@ -12,6 +12,7 @@ RUN npm run build
 FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+# Standalone runtime image for body-lab-api-nest; Postgres/Redis/auth hosts are injected via env.
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist

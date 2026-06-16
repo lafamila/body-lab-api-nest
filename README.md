@@ -1,8 +1,10 @@
 # body-lab-api-nest
 
-Deployable NestJS API for body-lab account-scoped logs, taxonomy, prediction snapshots, JSON export/import, and Redis-backed realtime sync.
+Independently deployed NestJS API/BFF for body-lab account-scoped logs, taxonomy, prediction snapshots, JSON export/import, and Redis-backed realtime sync.
 
 The server is a data and sync hub. It stores events and client-generated prediction snapshots; it does not run the analytics engine.
+
+This repo is not a root `docker-compose.yml` app service. For local/dev it can use PostgreSQL, Redis, and auth infrastructure from the workspace root infra compose, but the API itself is expected to run via local commands or its own Docker image/deployment.
 
 ## Runtime Contracts
 
@@ -24,10 +26,10 @@ The server is a data and sync hub. It stores events and client-generated predict
 
 Copy `.env.example` to `.env` and configure:
 
-- `DATABASE_URL`: PostgreSQL database `body_lab`
-- `REDIS_URL`: shared Redis used for minimal sync notifications
-- `AUTH_ISSUER_URL`: auth-api-nest issuer
-- `AUTH_API_BASE_URL`: auth-api-nest API base URL used for this BFF's OIDC authorize/token/revoke calls
+- `DATABASE_URL`: PostgreSQL database `body_lab`, provided by local root infra compose or deployment infrastructure
+- `REDIS_URL`: shared Redis used for minimal sync notifications, provided by local root infra compose or deployment infrastructure
+- `AUTH_ISSUER_URL`: independently deployed `auth-api-nest` issuer
+- `AUTH_API_BASE_URL`: independently deployed `auth-api-nest` API base URL used for this BFF's OIDC authorize/token/revoke calls
 - `AUTH_JWKS_URL`: optional direct JWKS URL; if omitted the API uses OIDC discovery from the issuer
 - `AUTH_AUDIENCE`: defaults to `service:body-lab`
 - `AUTH_SERVICE_KEY`: defaults to `body-lab`
@@ -41,7 +43,7 @@ Copy `.env.example` to `.env` and configure:
 
 Permission definitions, OIDC client redirect URIs/scopes, and backend credential scopes are owned by the approved auth service onboarding request. Changes require a new onboarding update request rather than manual auth admin mutation.
 
-## Commands
+## Local Dev Commands
 
 ```bash
 npm install
@@ -50,6 +52,11 @@ npm run build
 npm run lint
 npm run test
 npm run test:e2e
+```
+
+## Docker / Deploy Commands
+
+```bash
 docker build -t body-lab-api-nest .
 ```
 
