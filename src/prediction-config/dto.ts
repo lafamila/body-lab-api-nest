@@ -1,4 +1,5 @@
-import { IsBoolean, IsIn, IsNumber, IsObject, IsOptional, IsString, Matches } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, IsBoolean, IsIn, IsNumber, IsObject, IsOptional, IsString, IsUUID, Matches, ValidateNested } from 'class-validator';
 
 export type PredictionConfigKind = 'global' | 'meal' | 'drink' | 'bathroom' | 'workout';
 export type PredictionConfigInputMode = 'portion_size' | 'ml' | 'minutes' | 'times' | 'none';
@@ -88,4 +89,54 @@ export class UpsertPredictionConfigItemDto {
   @IsOptional()
   @IsObject()
   metadata?: PredictionConfigMetadata;
+}
+
+export class PredictionCalibrationPatchDto {
+  @IsIn(['global', 'meal', 'drink', 'bathroom', 'workout'])
+  kind!: PredictionConfigKind;
+
+  @IsString()
+  @Matches(/^[a-z][a-z0-9_]*$/)
+  key!: string;
+
+  @IsIn(['massKg', 'stoolRatio', 'minuteFactor'])
+  field!: 'massKg' | 'stoolRatio' | 'minuteFactor';
+
+  @IsNumber()
+  oldValue!: number;
+
+  @IsNumber()
+  proposedValue!: number;
+
+  @IsNumber()
+  sensitivity!: number;
+}
+
+export class CreatePredictionCalibrationDto {
+  @IsUUID()
+  previousWeightId!: string;
+
+  @IsUUID()
+  newWeightId!: string;
+
+  @IsNumber()
+  predictedWeightKg!: number;
+
+  @IsNumber()
+  actualWeightKg!: number;
+
+  @IsNumber()
+  residualKg!: number;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PredictionCalibrationPatchDto)
+  proposedPatches!: PredictionCalibrationPatchDto[];
+}
+
+export class PredictionCalibrationResultDto {
+  id!: string;
+  applied!: boolean;
+  reason?: string;
+  appliedPatches!: PredictionCalibrationPatchDto[];
 }

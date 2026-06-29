@@ -7,7 +7,14 @@ import { AuthAccount } from '../auth/auth.types';
 import { BodyLabSessionGuard } from '../auth/body-lab-session.guard';
 import { ExportImportService } from '../export-import/export-import.service';
 import { PredictionConfigServerSentMessage, SyncService } from '../sync/sync.service';
-import { PredictionConfigKind, PredictionConfigItemDto, PredictionConfigMetadata, UpsertPredictionConfigItemDto } from './dto';
+import {
+  CreatePredictionCalibrationDto,
+  PredictionConfigKind,
+  PredictionConfigItemDto,
+  PredictionConfigMetadata,
+  UpsertPredictionConfigItemDto,
+} from './dto';
+import { PredictionCalibrationService } from './prediction-calibration.service';
 import {
   PREDICTION_CONFIG_DEFAULT_ICON_KEYS,
   PREDICTION_CONFIG_DEFAULT_INPUT_MODE,
@@ -38,6 +45,7 @@ export class PredictionConfigController {
     private readonly service: PredictionConfigService,
     private readonly exportImportService: ExportImportService,
     private readonly sync: SyncService,
+    private readonly calibrationService?: PredictionCalibrationService,
   ) {}
 
   @UseGuards(BodyLabSessionGuard)
@@ -78,6 +86,15 @@ export class PredictionConfigController {
   @Delete('prediction-config/items/:id')
   deleteForSettings(@AuthAccountParam() account: AuthAccount, @Param('id') id: string) {
     return this.service.delete(account.accountId, id);
+  }
+
+  @UseGuards(BodyLabSessionGuard)
+  @Post('prediction-config/calibrations')
+  calibratePrediction(@AuthAccountParam() account: AuthAccount, @Body() body: CreatePredictionCalibrationDto) {
+    if (!this.calibrationService) {
+      throw new BadRequestException('Prediction calibration service is unavailable');
+    }
+    return this.calibrationService.calibrate(account.accountId, body);
   }
 
   @Get('admin/login')
