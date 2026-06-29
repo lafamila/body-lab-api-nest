@@ -7,7 +7,15 @@ import { AuthAccount } from '../auth/auth.types';
 import { BodyLabSessionGuard } from '../auth/body-lab-session.guard';
 import { ExportImportService } from '../export-import/export-import.service';
 import { PredictionConfigServerSentMessage, SyncService } from '../sync/sync.service';
-import { PredictionConfigKind, PredictionConfigItemDto, UpsertPredictionConfigItemDto } from './dto';
+import { PredictionConfigKind, PredictionConfigItemDto, PredictionConfigMetadata, UpsertPredictionConfigItemDto } from './dto';
+import {
+  PREDICTION_CONFIG_DEFAULT_ICON_KEYS,
+  PREDICTION_CONFIG_DEFAULT_INPUT_MODE,
+  PREDICTION_CONFIG_INPUT_MODES,
+  PREDICTION_CONFIG_SHORTCUT_PRESETS,
+  isPredictionConfigKind,
+  normalizePredictionConfigMetadata,
+} from './prediction-config-metadata';
 import { PredictionConfigService } from './prediction-config.service';
 
 class ImportBodyLabAdminBackupDto {
@@ -165,7 +173,7 @@ export class PredictionConfigController {
         throw new BadRequestException(`config.predictionConfig[${index}] must be an object`);
       }
       const record = item as Partial<PredictionConfigItemDto>;
-      if (!this.isPredictionConfigKind(record.kind)) {
+      if (!isPredictionConfigKind(record.kind)) {
         throw new BadRequestException(`config.predictionConfig[${index}].kind is invalid`);
       }
       if (!record.key || !/^[a-z][a-z0-9_]*$/.test(record.key)) {
@@ -183,60 +191,119 @@ export class PredictionConfigController {
         minuteFactor: record.minuteFactor ?? null,
         sortOrder: record.sortOrder ?? 0,
         isActive: record.isActive ?? true,
-        metadata: this.normalizeMetadata(record.metadata),
+        metadata: this.normalizeMetadata(record.kind, record.metadata),
       };
     });
   }
 
-  private normalizeMetadata(value: unknown): Record<string, unknown> {
+  private normalizeMetadata(kind: PredictionConfigKind, value: unknown): PredictionConfigMetadata {
     if (typeof value === 'undefined' || value === null) {
-      return {};
+      return normalizePredictionConfigMetadata(kind, {});
     }
     if (typeof value !== 'object' || Array.isArray(value)) {
       throw new BadRequestException('prediction config metadata must be an object');
     }
-    return value as Record<string, unknown>;
-  }
-
-  private isPredictionConfigKind(value: unknown): value is PredictionConfigKind {
-    return value === 'global' || value === 'meal' || value === 'drink' || value === 'bathroom' || value === 'workout';
+    return normalizePredictionConfigMetadata(kind, value);
   }
 }
 
+const shortcutPresetsJson = JSON.stringify(PREDICTION_CONFIG_SHORTCUT_PRESETS);
+const defaultIconKeysJson = JSON.stringify(PREDICTION_CONFIG_DEFAULT_ICON_KEYS);
+const defaultInputModesJson = JSON.stringify(PREDICTION_CONFIG_DEFAULT_INPUT_MODE);
+const inputModesJson = JSON.stringify(PREDICTION_CONFIG_INPUT_MODES);
+
 const baseStyle = `
-  :root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-  body { margin: 0; background: #050505; color: #f4f4f5; }
-  main { max-width: 1120px; margin: 0 auto; padding: 24px; }
-  h1 { margin: 0 0 18px; font-size: 22px; }
-  h2 { margin: 0 0 10px; font-size: 15px; color: #e4e4e7; }
-  section { border: 1px solid #27272a; border-radius: 8px; padding: 14px; margin: 14px 0; background: #0a0a0a; }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  input, select, button, textarea { border: 1px solid #3f3f46; border-radius: 6px; background: #111113; color: #f4f4f5; padding: 7px 8px; font-size: 13px; }
-  textarea { width: 100%; min-height: 58px; resize: vertical; box-sizing: border-box; }
-  button { cursor: pointer; }
+  :root {
+    color-scheme: dark;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --bg: #071018;
+    --panel: #0d1722;
+    --panel-alt: #111d2b;
+    --border: #243244;
+    --text: #f8fafc;
+    --muted: #94a3b8;
+    --accent: #7dd3fc;
+    --accent-soft: rgba(125, 211, 252, 0.16);
+    --success: #4ade80;
+    --danger: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: linear-gradient(180deg, #04070d 0%, var(--bg) 100%); color: var(--text); }
+  main { max-width: 1240px; margin: 0 auto; padding: 28px 20px 40px; }
+  h1 { margin: 0; font-size: 24px; }
+  h2 { margin: 0; font-size: 16px; color: var(--text); }
+  p { margin: 0; }
+  section { border: 1px solid var(--border); border-radius: 16px; padding: 18px; margin: 16px 0; background: var(--panel); box-shadow: inset 0 1px 0 rgba(255,255,255,0.02); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .section-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 14px; }
+  .section-head p { color: var(--muted); font-size: 13px; line-height: 1.45; max-width: 760px; }
+  input, select, button, textarea {
+    width: 100%;
+    min-height: 40px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel-alt);
+    color: var(--text);
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+  textarea { min-height: 88px; resize: none; }
+  button {
+    width: auto;
+    min-width: 108px;
+    cursor: pointer;
+    font-weight: 600;
+    background: rgba(125, 211, 252, 0.14);
+    border-color: rgba(125, 211, 252, 0.32);
+  }
+  button.secondary { background: transparent; border-color: var(--border); }
+  button.danger { background: rgba(248, 113, 113, 0.14); border-color: rgba(248, 113, 113, 0.4); }
   button:disabled { cursor: default; opacity: .55; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { border-bottom: 1px solid #27272a; padding: 8px; text-align: left; }
-  th { color: #a1a1aa; font-weight: 500; }
-  .number { width: 88px; }
-  .key { width: 130px; }
-  .label { width: 140px; }
-  .unit { width: 90px; }
-  .metadata-grid { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 8px; margin-top: 10px; }
-  .metadata-grid label { display: grid; gap: 4px; color: #a1a1aa; font-size: 12px; }
-  .metadata-text { max-width: 280px; color: #d4d4d8; font-size: 12px; line-height: 1.35; }
-  .status { color: #a1a1aa; font-size: 12px; }
-  .error { color: #f87171; }
-  .success { color: #4ade80; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 1080px; }
+  th, td { border-bottom: 1px solid rgba(148, 163, 184, 0.16); padding: 10px 8px; text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  .table-wrap { overflow: auto; }
   .toolbar { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
-  .status-bar { min-height: 18px; margin: 8px 0 0; color: #a1a1aa; font-size: 12px; }
-  .loading::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 50%; border: 2px solid #52525b; border-top-color: #f4f4f5; animation: spin .8s linear infinite; vertical-align: -2px; }
+  .status-bar { min-height: 18px; margin: 10px 0 0; color: var(--muted); font-size: 12px; }
+  .status { color: var(--muted); font-size: 12px; line-height: 1.5; }
+  .error { color: var(--danger); }
+  .success { color: var(--success); }
+  .loading::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 999px; border: 2px solid rgba(148, 163, 184, 0.45); border-top-color: var(--text); animation: spin .8s linear infinite; vertical-align: -2px; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .modal-backdrop { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.7); padding: 24px; }
+  .kind-tabs, .shortcut-strip { display: flex; flex-wrap: wrap; gap: 10px; }
+  .kind-tab.active, .shortcut-button { background: var(--accent-soft); border-color: rgba(125, 211, 252, 0.34); }
+  .kind-tab.active { color: var(--text); }
+  .shortcut-button { min-width: 0; }
+  .shortcut-button .muted { display: block; color: var(--muted); font-size: 11px; font-weight: 500; margin-top: 2px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: rgba(148, 163, 184, 0.12); color: var(--muted); font-size: 12px; }
+  .notice { padding: 12px 14px; border: 1px solid rgba(125, 211, 252, 0.26); background: rgba(125, 211, 252, 0.08); border-radius: 12px; color: #d9f4ff; font-size: 12px; line-height: 1.5; }
+  .notice.hidden { display: none; }
+  .form-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+  .field { display: grid; gap: 6px; }
+  .field span { color: var(--muted); font-size: 12px; }
+  .field[data-hidden="true"] { display: none; }
+  .field-wide { grid-column: span 2; }
+  .actions { margin-top: 16px; }
+  .details { margin-top: 14px; border-top: 1px solid rgba(148, 163, 184, 0.12); padding-top: 14px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  .badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 8px; background: rgba(148, 163, 184, 0.14); color: var(--text); font-size: 11px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .metadata-text { max-width: 260px; color: #d4dbe6; font-size: 12px; line-height: 1.45; }
+  .modal-backdrop { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.72); padding: 24px; }
   .modal-backdrop.open { display: flex; }
-  .modal { width: min(560px, 100%); border: 1px solid #3f3f46; border-radius: 8px; background: #09090b; padding: 16px; }
-  .dropzone { border: 1px dashed #52525b; border-radius: 8px; padding: 24px; text-align: center; color: #a1a1aa; }
-  .dropzone.dragging { border-color: #f4f4f5; color: #f4f4f5; }
+  .modal { width: min(560px, 100%); border: 1px solid var(--border); border-radius: 16px; background: var(--panel); padding: 18px; }
+  .dropzone { border: 1px dashed rgba(148, 163, 184, 0.38); border-radius: 12px; padding: 24px; text-align: center; color: var(--muted); }
+  .dropzone.dragging { border-color: var(--accent); color: var(--text); }
+  @media (max-width: 980px) {
+    .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 720px) {
+    main { padding: 20px 14px 32px; }
+    .toolbar, .section-head { align-items: stretch; flex-direction: column; }
+    .form-grid { grid-template-columns: 1fr; }
+    .field-wide { grid-column: auto; }
+    button { width: 100%; }
+  }
 `;
 
 const loginHtml = `<!doctype html>
@@ -325,50 +392,168 @@ const adminHtml = `<!doctype html>
   <div id="statusBar" class="status-bar"></div>
 
   <section>
-    <h2>Backup</h2>
-    <div class="row">
-      <button onclick="exportBackup()">Export JSON</button>
-      <button onclick="openImportModal()">Import JSON</button>
+    <div class="section-head">
+      <div>
+        <h2>Backup</h2>
+        <p>config와 로그인 계정의 개인 기록 데이터를 한 번에 내보내고 다시 불러옵니다.</p>
+      </div>
+      <div class="row">
+        <button onclick="exportBackup()">Export JSON</button>
+        <button class="secondary" onclick="openImportModal()">Import JSON</button>
+      </div>
     </div>
-    <p class="status">config와 로그인 계정의 개인 기록 데이터를 함께 내보내고 불러옵니다.</p>
   </section>
 
   <section>
-    <h2>Prediction config</h2>
-    <div class="row">
-      <select id="kind">
-        <option value="meal">meal</option>
-        <option value="drink">drink</option>
-        <option value="bathroom">bathroom</option>
-        <option value="workout">workout</option>
-        <option value="global" disabled>global</option>
-      </select>
-      <input id="key" class="key" placeholder="key">
-      <input id="label" class="label" placeholder="label">
-      <input id="massKg" class="number" placeholder="mass kg" type="number" step="0.0001">
-      <input id="stoolRatio" class="number" placeholder="stool" type="number" step="0.0001">
-      <input id="minuteFactor" class="number" placeholder="min factor" type="number" step="0.00001">
-      <input id="sortOrder" class="number" placeholder="order" type="number" step="1">
-      <label><input id="isActive" type="checkbox" checked> active</label>
+    <div class="section-head">
+      <div>
+        <h2>Prediction config</h2>
+        <p>global config는 직접 새로 만들 수 없습니다. meal, drink, bathroom, workout은 kind별 form과 shortcut으로 빠르게 채운 뒤 저장하세요.</p>
+      </div>
+      <div class="row">
+        <span class="pill">global create disabled</span>
+        <button class="secondary" onclick="load()">Refresh</button>
+      </div>
+    </div>
+
+    <div id="kindTabs" class="kind-tabs">
+      <button id="kindTab-meal" class="kind-tab" type="button" onclick="resetForm('meal')">meal</button>
+      <button id="kindTab-drink" class="kind-tab" type="button" onclick="resetForm('drink')">drink</button>
+      <button id="kindTab-bathroom" class="kind-tab" type="button" onclick="resetForm('bathroom')">bathroom</button>
+      <button id="kindTab-workout" class="kind-tab" type="button" onclick="resetForm('workout')">workout</button>
+    </div>
+
+    <div id="editingNotice" class="notice hidden"></div>
+    <div id="shortcutStrip" class="shortcut-strip" style="margin-top: 14px;"></div>
+
+    <div class="form-grid">
+      <label class="field">
+        <span>Kind</span>
+        <input id="kindDisplay" class="mono" disabled>
+      </label>
+      <label class="field">
+        <span>Key</span>
+        <input id="key" class="mono" placeholder="key">
+      </label>
+      <label class="field">
+        <span>Label</span>
+        <input id="label" placeholder="label">
+      </label>
+      <label class="field">
+        <span>Sort order</span>
+        <input id="sortOrder" type="number" step="1" placeholder="0">
+      </label>
+      <label class="field" data-field="massKg">
+        <span id="massKgLabel">Mass kg</span>
+        <input id="massKg" type="number" step="0.0001" placeholder="0.0000">
+      </label>
+      <label class="field" data-field="stoolRatio">
+        <span>Stool ratio</span>
+        <input id="stoolRatio" type="number" step="0.0001" placeholder="0.0000">
+      </label>
+      <label class="field" data-field="minuteFactor">
+        <span id="minuteFactorLabel">Minute factor</span>
+        <input id="minuteFactor" type="number" step="0.00001" placeholder="0.00000">
+      </label>
+      <label class="field" data-field="isActive">
+        <span>Active</span>
+        <select id="isActive">
+          <option value="true">active</option>
+          <option value="false">inactive</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="form-grid">
+      <label class="field" data-field="iconKey">
+        <span>Icon token</span>
+        <input id="metadataIconKey" class="mono" placeholder="meal_default">
+      </label>
+      <label class="field" data-field="inputMode">
+        <span>Input mode</span>
+        <select id="metadataInputMode"></select>
+      </label>
+      <label class="field" data-field="defaultAmount">
+        <span>Default amount</span>
+        <input id="metadataDefaultAmount" type="number" step="0.01" placeholder="500">
+      </label>
+      <label class="field" data-field="defaultUnit">
+        <span>Default unit</span>
+        <input id="metadataDefaultUnit" class="mono" placeholder="ml">
+      </label>
+      <label class="field" data-field="shortcutKey">
+        <span>Shortcut key</span>
+        <input id="metadataShortcutKey" class="mono" placeholder="coffee">
+      </label>
+    </div>
+
+    <div class="details">
+      <details>
+        <summary>Advanced metadata</summary>
+        <div class="form-grid">
+          <label class="field field-wide">
+            <span>Description</span>
+            <textarea id="metadataDescription" placeholder="What this value means in prediction"></textarea>
+          </label>
+          <label class="field field-wide">
+            <span>Setup text</span>
+            <textarea id="metadataSetupText" placeholder="Text shown during setup"></textarea>
+          </label>
+          <label class="field field-wide">
+            <span>Input hint</span>
+            <textarea id="metadataInputHint" placeholder="How the user should enter this value"></textarea>
+          </label>
+          <label class="field">
+            <span>Prediction unit</span>
+            <input id="metadataUnit" class="mono" placeholder="kg, hours, kg/hour">
+          </label>
+          <label class="field">
+            <span>Required in setup</span>
+            <select id="metadataRequiredInSetup">
+              <option value="false">false</option>
+              <option value="true">true</option>
+            </select>
+          </label>
+        </div>
+      </details>
+    </div>
+
+    <div class="row actions">
       <button onclick="save()">Save</button>
-      <button onclick="resetForm()">New</button>
-      <button onclick="load()">Refresh</button>
+      <button class="secondary" onclick="resetForm(activeKind)">New</button>
     </div>
-    <div class="metadata-grid">
-      <label>Description<textarea id="metadataDescription" placeholder="What this value means in prediction"></textarea></label>
-      <label>Setup text<textarea id="metadataSetupText" placeholder="Text shown during initial setup"></textarea></label>
-      <label>Input hint<textarea id="metadataInputHint" placeholder="How to choose or enter this value"></textarea></label>
-      <label>Unit<input id="metadataUnit" class="unit" placeholder="kg, hours, kg/hour"></label>
-      <label><span>Required in setup</span><input id="metadataRequiredInSetup" type="checkbox"></label>
-    </div>
-    <p class="status">meal.massKg는 1인분 입력시 더해질 무게, meal.stoolRatio는 대변 배출 비율입니다. drink.massKg는 amount 1당 더해질 무게, bathroom.urine massKg는 음수, workout.minuteFactor는 분당 감소 계수입니다.</p>
+    <p id="formHelp" class="status" style="margin-top: 12px;"></p>
   </section>
 
   <section>
-    <table>
-      <thead><tr><th>kind</th><th>key</th><th>label</th><th>description</th><th>unit</th><th>mass</th><th>stool</th><th>minute</th><th>order</th><th>active</th><th></th></tr></thead>
-      <tbody id="items"></tbody>
-    </table>
+    <div class="section-head">
+      <div>
+        <h2>Current items</h2>
+        <p>shortcut metadata와 fallback 결과를 함께 보여줍니다. global row는 Edit만 가능하고 Delete는 숨깁니다.</p>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>kind</th>
+            <th>label</th>
+            <th>key</th>
+            <th>icon</th>
+            <th>input mode</th>
+            <th>default</th>
+            <th>mass</th>
+            <th>stool</th>
+            <th>minute</th>
+            <th>order</th>
+            <th>active</th>
+            <th>description</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="items"></tbody>
+      </table>
+    </div>
   </section>
 </main>
 
@@ -390,11 +575,55 @@ const adminHtml = `<!doctype html>
 </div>
 
 <script>
+const SHORTCUT_PRESETS = ${shortcutPresetsJson};
+const DEFAULT_ICON_KEYS = ${defaultIconKeysJson};
+const DEFAULT_INPUT_MODES = ${defaultInputModesJson};
+const INPUT_MODE_OPTIONS = ${inputModesJson};
+const ICON_LABELS = {
+  meal_default: 'Meal',
+  meal_salad: 'Salad',
+  meal_balance: 'Balance',
+  meal_protein: 'Protein',
+  meal_meat: 'Meat',
+  drink_default: 'Drink',
+  drink_coffee: 'Coffee',
+  drink_sparkling: 'Sparkling',
+  bathroom_default: 'Bathroom',
+  bathroom_urine: 'Urine',
+  bathroom_bowel: 'Bowel',
+  workout_default: 'Workout',
+  workout_walk: 'Walk',
+  workout_stairs: 'Stairs',
+  workout_squat: 'Squat',
+  workout_pushup: 'Pushup',
+  workout_run: 'Run'
+};
+const FIELD_VISIBILITY = {
+  global: ['massKg'],
+  meal: ['massKg', 'stoolRatio', 'isActive', 'iconKey', 'inputMode', 'shortcutKey'],
+  drink: ['massKg', 'isActive', 'iconKey', 'inputMode', 'defaultAmount', 'defaultUnit', 'shortcutKey'],
+  bathroom: ['massKg', 'isActive', 'iconKey', 'inputMode', 'shortcutKey'],
+  workout: ['minuteFactor', 'isActive', 'iconKey', 'inputMode', 'defaultAmount', 'defaultUnit', 'shortcutKey']
+};
+const KIND_INPUT_MODE_OPTIONS = {
+  meal: ['portion_size'],
+  drink: ['ml'],
+  bathroom: ['none'],
+  workout: ['times', 'minutes']
+};
+const FORM_HELP = {
+  global: 'global value는 table에서 선택해 수정만 가능합니다. 새 global key 생성은 계속 막혀 있습니다.',
+  meal: 'meal.massKg는 기본 1회 섭취 무게, stoolRatio는 배출 비율입니다. shortcut은 소/중/대 입력 흐름을 전제로 metadata.inputMode=portion_size를 채웁니다.',
+  drink: 'drink.massKg는 기본 입력량(defaultAmount/defaultUnit) 기준 무게입니다. coffee, drink, sparkling shortcut은 기본 ml를 미리 채웁니다.',
+  bathroom: 'bathroom.massKg는 이벤트 1회 기준 변화량입니다. 소변/대변 shortcut은 입력 없이 저장 가능한 metadata.inputMode=none을 채웁니다.',
+  workout: 'workout.minuteFactor는 예측에서 쓰는 감소 계수입니다. walk/stairs/squat/pushup은 times, run은 minutes shortcut을 사용합니다.'
+};
 let editingId = null;
 let editingMetadata = {};
 let selectedImportFile = null;
 let loadingCount = 0;
 let configEvents = null;
+let activeKind = 'meal';
 const statusBar = document.getElementById('statusBar');
 
 function setStatus(message, className) {
@@ -442,11 +671,16 @@ async function logout() {
 async function load() {
   const rows = await api('/admin/prediction-config/items?includeInactive=true', { loadingText: 'Loading config...' });
   document.getElementById('items').innerHTML = rows.map(row => '<tr>' +
-    '<td>' + escapeHtml(row.kind) + '</td><td>' + escapeHtml(row.key) + '</td><td>' + escapeHtml(row.label) + '</td>' +
-    '<td class="metadata-text">' + escapeHtml((row.metadata && row.metadata.description) || '') + '</td><td>' + escapeHtml((row.metadata && row.metadata.unit) || '') + '</td>' +
-    '<td>' + (row.massKg ?? '') + '</td><td>' + (row.stoolRatio ?? '') + '</td><td>' + (row.minuteFactor ?? '') + '</td><td>' + row.sortOrder + '</td><td>' + row.isActive + '</td>' +
+    '<td><span class="badge mono">' + escapeHtml(row.kind) + '</span></td>' +
+    '<td>' + escapeHtml(row.label) + '</td>' +
+    '<td class="mono">' + escapeHtml(row.key) + '</td>' +
+    '<td>' + renderIconBadge(row) + '</td>' +
+    '<td>' + escapeHtml(((row.metadata && row.metadata.inputMode) || '')) + '</td>' +
+    '<td>' + escapeHtml(renderDefaultAmount(row.metadata || {})) + '</td>' +
+    '<td>' + escapeHtml(row.massKg ?? '') + '</td><td>' + escapeHtml(row.stoolRatio ?? '') + '</td><td>' + escapeHtml(row.minuteFactor ?? '') + '</td><td>' + escapeHtml(row.sortOrder) + '</td><td>' + escapeHtml(row.isActive) + '</td>' +
+    '<td class="metadata-text">' + escapeHtml((row.metadata && row.metadata.description) || '') + '</td>' +
     '<td><button onclick="edit(' + escapeAttribute(JSON.stringify(row)) + ')">Edit</button> ' +
-    (row.kind === 'global' ? '' : '<button onclick="removeItem(\\'' + row.id + '\\')">Delete</button>') +
+    (row.kind === 'global' ? '' : '<button class="danger" onclick="removeItem(\\'' + row.id + '\\')">Delete</button>') +
     '</td></tr>'
   ).join('');
   setStatus('Loaded', 'success');
@@ -469,52 +703,186 @@ function escapeHtml(value) {
 function escapeAttribute(value) {
   return "'" + escapeHtml(value) + "'";
 }
+function renderIconBadge(row) {
+  const metadata = row && row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+  const iconKey = metadata.iconKey || '';
+  if (!iconKey) return '';
+  const label = ICON_LABELS[iconKey] || iconKey;
+  return '<span class="badge mono">' + escapeHtml(label) + '</span>';
+}
+function renderDefaultAmount(metadata) {
+  const amount = metadata && typeof metadata.defaultAmount === 'number' ? String(metadata.defaultAmount) : '';
+  const unit = metadata && typeof metadata.defaultUnit === 'string' ? metadata.defaultUnit : '';
+  return [amount, unit].filter(Boolean).join(' ');
+}
 function edit(row) {
   if (typeof row === 'string') row = JSON.parse(row);
   editingId = row.id;
   editingMetadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
   const isGlobal = row.kind === 'global';
-  document.getElementById('kind').disabled = isGlobal;
+  activeKind = row.kind;
+  syncKindTabs();
+  renderInputModeOptions(row.kind, editingMetadata.inputMode || (DEFAULT_INPUT_MODES[row.kind] || ''));
+  renderShortcutStrip();
+  updateFieldVisibility();
+  updateEditingNotice(isGlobal ? 'global row를 수정 중입니다. key/active는 고정되고 저장 시 update만 수행합니다.' : '기존 item을 수정 중입니다. 필요하면 shortcut을 다시 눌러 metadata를 덮어쓴 뒤 저장하세요.');
+  document.getElementById('kindDisplay').value = row.kind;
   document.getElementById('key').disabled = isGlobal;
   document.getElementById('isActive').disabled = isGlobal;
-  for (const key of ['kind','key','label','massKg','stoolRatio','minuteFactor','sortOrder']) document.getElementById(key).value = row[key] ?? '';
-  document.getElementById('isActive').checked = row.isActive;
+  for (const key of ['key','label','massKg','stoolRatio','minuteFactor','sortOrder']) document.getElementById(key).value = row[key] ?? '';
+  document.getElementById('isActive').value = row.isActive ? 'true' : 'false';
+  document.getElementById('metadataIconKey').value = editingMetadata.iconKey || '';
+  document.getElementById('metadataDefaultAmount').value = editingMetadata.defaultAmount ?? '';
+  document.getElementById('metadataDefaultUnit').value = editingMetadata.defaultUnit || '';
+  document.getElementById('metadataShortcutKey').value = editingMetadata.shortcutKey || '';
   document.getElementById('metadataDescription').value = editingMetadata.description || '';
   document.getElementById('metadataSetupText').value = editingMetadata.setupText || '';
   document.getElementById('metadataInputHint').value = editingMetadata.inputHint || '';
   document.getElementById('metadataUnit').value = editingMetadata.unit || '';
-  document.getElementById('metadataRequiredInSetup').checked = Boolean(editingMetadata.requiredInSetup);
+  document.getElementById('metadataRequiredInSetup').value = editingMetadata.requiredInSetup ? 'true' : 'false';
+  updateFormLabels();
+  updateFormHelp();
 }
-function resetForm() {
+function resetForm(nextKind) {
+  activeKind = nextKind || activeKind || 'meal';
   editingId = null;
   editingMetadata = {};
-  document.getElementById('kind').disabled = false;
-  document.getElementById('kind').value = 'meal';
+  syncKindTabs();
+  document.getElementById('kindDisplay').value = activeKind;
   document.getElementById('key').disabled = false;
   document.getElementById('isActive').disabled = false;
-  for (const key of ['key','label','massKg','stoolRatio','minuteFactor','sortOrder']) document.getElementById(key).value = '';
-  for (const key of ['metadataDescription','metadataSetupText','metadataInputHint','metadataUnit']) document.getElementById(key).value = '';
-  document.getElementById('isActive').checked = true;
-  document.getElementById('metadataRequiredInSetup').checked = false;
+  for (const key of ['key','label','massKg','stoolRatio','minuteFactor','sortOrder','metadataDescription','metadataSetupText','metadataInputHint','metadataUnit']) document.getElementById(key).value = '';
+  document.getElementById('isActive').value = 'true';
+  document.getElementById('metadataRequiredInSetup').value = 'false';
+  document.getElementById('metadataShortcutKey').value = '';
+  document.getElementById('metadataDefaultAmount').value = '';
+  document.getElementById('metadataDefaultUnit').value = activeKind === 'drink' ? 'ml' : (activeKind === 'workout' ? DEFAULT_INPUT_MODES[activeKind] : '');
+  document.getElementById('metadataIconKey').value = activeKind === 'global' ? '' : DEFAULT_ICON_KEYS[activeKind];
+  renderInputModeOptions(activeKind, activeKind === 'global' ? '' : DEFAULT_INPUT_MODES[activeKind]);
+  renderShortcutStrip();
+  updateFieldVisibility();
+  updateFormLabels();
+  updateEditingNotice('');
+  updateFormHelp();
+}
+function syncKindTabs() {
+  for (const kind of ['meal', 'drink', 'bathroom', 'workout']) {
+    document.getElementById('kindTab-' + kind).classList.toggle('active', activeKind === kind);
+  }
+}
+function renderShortcutStrip() {
+  const container = document.getElementById('shortcutStrip');
+  if (activeKind === 'global') {
+    container.innerHTML = '';
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = 'flex';
+  const presets = SHORTCUT_PRESETS[activeKind] || [];
+  container.innerHTML = presets.map((preset) =>
+    '<button class="shortcut-button" type="button" onclick="applyShortcut(' + escapeAttribute(JSON.stringify(preset)) + ')">' +
+      escapeHtml(preset.label) +
+      '<span class="muted">' + escapeHtml(preset.key) + '</span>' +
+    '</button>'
+  ).join('');
+}
+function updateEditingNotice(message) {
+  const notice = document.getElementById('editingNotice');
+  notice.textContent = message || '';
+  notice.classList.toggle('hidden', !message);
+}
+function updateFieldVisibility() {
+  const visibleFields = FIELD_VISIBILITY[activeKind] || [];
+  for (const field of document.querySelectorAll('[data-field]')) {
+    field.dataset.hidden = visibleFields.includes(field.dataset.field) ? 'false' : 'true';
+  }
+}
+function updateFormLabels() {
+  document.getElementById('massKgLabel').textContent =
+    activeKind === 'meal' ? 'Mass kg per portion' :
+    activeKind === 'drink' ? 'Mass kg per default amount' :
+    activeKind === 'bathroom' ? 'Mass kg per event' :
+    activeKind === 'global' ? 'Value' :
+    'Mass kg';
+  document.getElementById('minuteFactorLabel').textContent =
+    activeKind === 'workout' ? 'Minute factor' : 'Minute factor';
+}
+function updateFormHelp() {
+  document.getElementById('formHelp').textContent = FORM_HELP[activeKind] || '';
+}
+function renderInputModeOptions(kind, selectedValue) {
+  const select = document.getElementById('metadataInputMode');
+  const options = kind === 'global' ? [] : (KIND_INPUT_MODE_OPTIONS[kind] || INPUT_MODE_OPTIONS);
+  if (!options.length) {
+    select.innerHTML = '<option value="">n/a</option>';
+    select.value = '';
+    return;
+  }
+  const current = options.includes(selectedValue) ? selectedValue : options[0];
+  select.innerHTML = options.map((mode) => '<option value="' + escapeHtml(mode) + '">' + escapeHtml(mode) + '</option>').join('');
+  select.value = current;
+}
+function applyShortcut(preset) {
+  if (typeof preset === 'string') preset = JSON.parse(preset);
+  if (!preset || preset.kind !== activeKind) return;
+  document.getElementById('key').value = preset.key;
+  document.getElementById('label').value = preset.label;
+  document.getElementById('metadataIconKey').value = preset.iconKey;
+  document.getElementById('metadataShortcutKey').value = preset.shortcutKey;
+  document.getElementById('metadataDefaultAmount').value = typeof preset.defaultAmount === 'number' ? String(preset.defaultAmount) : '';
+  document.getElementById('metadataDefaultUnit').value = preset.defaultUnit || '';
+  renderInputModeOptions(activeKind, preset.inputMode);
+  document.getElementById('isActive').value = 'true';
+  updateEditingNotice('shortcut이 form 값만 채웠습니다. 저장 전 key, label, icon, input mode, default amount를 수정할 수 있습니다.');
+}
+function stringOrUndefined(value) {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+function numberOrUndefined(id) {
+  const value = document.getElementById(id).value.trim();
+  return value === '' ? undefined : Number(value);
+}
+function assignKnownValue(target, key, value) {
+  if (typeof value === 'undefined') {
+    delete target[key];
+    return;
+  }
+  target[key] = value;
+}
+function collectMetadata() {
+  const metadata = { ...editingMetadata };
+  assignKnownValue(metadata, 'description', stringOrUndefined(document.getElementById('metadataDescription').value));
+  assignKnownValue(metadata, 'setupText', stringOrUndefined(document.getElementById('metadataSetupText').value));
+  assignKnownValue(metadata, 'inputHint', stringOrUndefined(document.getElementById('metadataInputHint').value));
+  assignKnownValue(metadata, 'unit', stringOrUndefined(document.getElementById('metadataUnit').value));
+  assignKnownValue(metadata, 'requiredInSetup', document.getElementById('metadataRequiredInSetup').value === 'true');
+  if (activeKind === 'global') {
+    delete metadata.iconKey;
+    delete metadata.inputMode;
+    delete metadata.defaultAmount;
+    delete metadata.defaultUnit;
+    delete metadata.shortcutKey;
+    return metadata;
+  }
+  assignKnownValue(metadata, 'iconKey', stringOrUndefined(document.getElementById('metadataIconKey').value) || DEFAULT_ICON_KEYS[activeKind]);
+  assignKnownValue(metadata, 'inputMode', document.getElementById('metadataInputMode').value || DEFAULT_INPUT_MODES[activeKind]);
+  assignKnownValue(metadata, 'defaultAmount', numberOrUndefined('metadataDefaultAmount'));
+  assignKnownValue(metadata, 'defaultUnit', stringOrUndefined(document.getElementById('metadataDefaultUnit').value));
+  assignKnownValue(metadata, 'shortcutKey', stringOrUndefined(document.getElementById('metadataShortcutKey').value));
+  return metadata;
 }
 async function save() {
-  const metadata = {
-    ...editingMetadata,
-    description: document.getElementById('metadataDescription').value.trim(),
-    setupText: document.getElementById('metadataSetupText').value.trim(),
-    inputHint: document.getElementById('metadataInputHint').value.trim(),
-    unit: document.getElementById('metadataUnit').value.trim(),
-    requiredInSetup: document.getElementById('metadataRequiredInSetup').checked
-  };
+  const metadata = collectMetadata();
   const payload = {
-    kind: document.getElementById('kind').value,
+    kind: activeKind,
     key: document.getElementById('key').value.trim(),
     label: document.getElementById('label').value.trim(),
     massKg: nullableNumber('massKg'),
     stoolRatio: nullableNumber('stoolRatio'),
     minuteFactor: nullableNumber('minuteFactor'),
     sortOrder: Number(document.getElementById('sortOrder').value || 0),
-    isActive: document.getElementById('isActive').checked,
+    isActive: document.getElementById('isActive').value === 'true',
     metadata
   };
   await api(editingId ? '/admin/prediction-config/items/' + editingId : '/admin/prediction-config/items', {
@@ -522,7 +890,7 @@ async function save() {
     body: JSON.stringify(payload),
     loadingText: 'Saving config...'
   });
-  resetForm();
+  resetForm(activeKind === 'global' ? 'meal' : activeKind);
   await load();
 }
 async function removeItem(id) {
@@ -577,6 +945,7 @@ dropzone.addEventListener('drop', (event) => {
   setImportFile(event.dataTransfer.files && event.dataTransfer.files[0] ? event.dataTransfer.files[0] : null);
 });
 
+resetForm('meal');
 assertLoggedIn().then(() => {
   subscribeConfigEvents();
   return load();

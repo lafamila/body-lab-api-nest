@@ -32,11 +32,25 @@ describe('PredictionConfigRepository', () => {
       label: 'Balanced',
       massKg: 0.6,
       stoolRatio: 0.18,
-      metadata: { description: 'Meal mass contribution.', unit: 'kg', requiredInSetup: false },
+      metadata: {
+        description: 'Meal mass contribution.',
+        unit: 'kg',
+        requiredInSetup: false,
+        iconKey: 'meal_balance',
+        inputMode: 'portion_size',
+        shortcutKey: 'balance',
+      },
     });
 
     expect(database.query.mock.calls[0][1][9]).toBe(
-      JSON.stringify({ description: 'Meal mass contribution.', unit: 'kg', requiredInSetup: false }),
+      JSON.stringify({
+        description: 'Meal mass contribution.',
+        unit: 'kg',
+        requiredInSetup: false,
+        iconKey: 'meal_balance',
+        inputMode: 'portion_size',
+        shortcutKey: 'balance',
+      }),
     );
     expect(database.query.mock.calls[0][0]).toContain(
       'on conflict (account_id, kind, key) where account_id is not null',
@@ -45,6 +59,9 @@ describe('PredictionConfigRepository', () => {
       description: 'Meal mass contribution.',
       unit: 'kg',
       requiredInSetup: false,
+      iconKey: 'meal_balance',
+      inputMode: 'portion_size',
+      shortcutKey: 'balance',
     });
   });
 });
@@ -124,11 +141,60 @@ describe('PredictionConfigService', () => {
 
     expect(repository.upsert).toHaveBeenCalledWith(
       'account-1',
-      expect.objectContaining({ kind: 'meal', key: 'balanced' }),
+      expect.objectContaining({
+        kind: 'meal',
+        key: 'balanced',
+        metadata: expect.objectContaining({
+          description: 'Meal',
+          iconKey: 'meal_default',
+          inputMode: 'portion_size',
+        }),
+      }),
     );
     expect(sync.publishPredictionConfig).toHaveBeenCalledWith('account-1', [
-      expect.objectContaining({ metadata: { description: 'Meal' } }),
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          description: 'Meal',
+          iconKey: 'meal_default',
+          inputMode: 'portion_size',
+        }),
+      }),
     ]);
+  });
+
+  it('fills shortcut metadata defaults for shortcut-backed items', async () => {
+    const repository = {
+      upsert: jest.fn(async (payload: UpsertPredictionConfigItemDto) => ({
+        id: 'drink-1',
+        ...payload,
+        metadata: payload.metadata ?? {},
+        updatedAt: 'now',
+      })),
+      list: jest.fn(async () => []),
+    };
+    const sync = { publishPredictionConfig: jest.fn(async () => undefined) };
+    const service = new PredictionConfigService(repository as never, sync as never);
+
+    await service.upsert('account-1', {
+      kind: 'drink',
+      key: 'coffee',
+      label: 'Coffee',
+      massKg: 0.5,
+      metadata: { shortcutKey: 'coffee' },
+    });
+
+    expect(repository.upsert).toHaveBeenCalledWith(
+      'account-1',
+      expect.objectContaining({
+        metadata: {
+          shortcutKey: 'coffee',
+          iconKey: 'drink_coffee',
+          inputMode: 'ml',
+          defaultAmount: 500,
+          defaultUnit: 'ml',
+        },
+      }),
+    );
   });
 
   it('rejects global creation because global keys are seeded and fixed', async () => {

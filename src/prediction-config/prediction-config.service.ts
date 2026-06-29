@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { SyncService } from '../sync/sync.service';
 import { PredictionConfigItemDto, PredictionConfigKind, PredictionConfigStatusDto, UpsertPredictionConfigItemDto } from './dto';
+import { hydratePredictionConfigItem, normalizePredictionConfigPayload } from './prediction-config-metadata';
 import { PredictionConfigRepository } from './prediction-config.repository';
 
 const REQUIRED_GLOBALS: { key: string; label: string }[] = [
@@ -18,8 +19,9 @@ export class PredictionConfigService {
     private readonly sync: SyncService,
   ) {}
 
-  list(accountId: string, includeInactive = false): Promise<PredictionConfigItemDto[]> {
-    return this.repository.list(accountId, includeInactive);
+  async list(accountId: string, includeInactive = false): Promise<PredictionConfigItemDto[]> {
+    const items = await this.repository.list(accountId, includeInactive);
+    return items.map((item) => hydratePredictionConfigItem(item));
   }
 
   async status(accountId: string): Promise<PredictionConfigStatusDto> {
@@ -62,13 +64,17 @@ export class PredictionConfigService {
     if (payload.kind === 'global') {
       throw new BadRequestException('Global prediction config keys cannot be created');
     }
-    const item = await this.repository.upsert(accountId, payload);
+    const item = hydratePredictionConfigItem(
+      await this.repository.upsert(accountId, normalizePredictionConfigPayload(payload)),
+    );
     await this.publishConfig(accountId);
     return item;
   }
 
   async update(accountId: string, id: string, payload: UpsertPredictionConfigItemDto): Promise<PredictionConfigItemDto> {
-    const item = await this.repository.update(accountId, id, payload);
+    const item = hydratePredictionConfigItem(
+      await this.repository.update(accountId, id, normalizePredictionConfigPayload(payload)),
+    );
     await this.publishConfig(accountId);
     return item;
   }
@@ -80,7 +86,9 @@ export class PredictionConfigService {
   }
 
   async replaceAll(accountId: string, payloads: UpsertPredictionConfigItemDto[]): Promise<PredictionConfigItemDto[]> {
-    const items = await this.repository.replaceAll(accountId, payloads);
+    const items = (await this.repository.replaceAll(accountId, payloads.map((payload) => normalizePredictionConfigPayload(payload)))).map(
+      (item) => hydratePredictionConfigItem(item),
+    );
     await this.publishConfig(accountId);
     return items;
   }

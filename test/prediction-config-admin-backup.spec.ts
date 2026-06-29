@@ -43,7 +43,7 @@ describe('PredictionConfigController admin backup', () => {
     const result = await controller.importAdminBackup(account, {
       schemaVersion: 1,
       config: {
-        predictionConfig: [{ kind: 'meal', key: 'protein', label: 'Protein' }],
+        predictionConfig: [{ kind: 'drink', key: 'coffee', label: 'Coffee', metadata: { shortcutKey: 'coffee' } }],
       },
       data: {
         weights: [{ measuredAt: '2026-06-11T00:00:00.000Z', valueKg: '104.9' }],
@@ -52,7 +52,19 @@ describe('PredictionConfigController admin backup', () => {
 
     expect(result.imported.predictionConfig).toBe(1);
     expect(config.replaceAll).toHaveBeenCalledWith('account-1', [
-      expect.objectContaining({ kind: 'meal', key: 'protein', label: 'Protein', isActive: true }),
+      expect.objectContaining({
+        kind: 'drink',
+        key: 'coffee',
+        label: 'Coffee',
+        isActive: true,
+        metadata: expect.objectContaining({
+          shortcutKey: 'coffee',
+          iconKey: 'drink_coffee',
+          inputMode: 'ml',
+          defaultAmount: 500,
+          defaultUnit: 'ml',
+        }),
+      }),
     ]);
     expect(exportImport.import).toHaveBeenCalledWith('account-1', {
       schemaVersion: 1,
@@ -72,5 +84,20 @@ describe('PredictionConfigController admin backup', () => {
     expect(response.type).toHaveBeenCalledWith('html');
     expect(response.send).toHaveBeenCalledWith(expect.stringContaining('>로그인<'));
     expect(response.send).not.toHaveBeenCalledWith(expect.stringContaining('Login with Teddy Auth'));
+  });
+
+  it('renders kind-specific admin controls without a global creation picker', () => {
+    const controller = new PredictionConfigController({} as never, {} as never, {} as never);
+    const response = {
+      type: jest.fn().mockReturnThis(),
+      send: jest.fn(),
+    };
+
+    controller.admin(response as never);
+
+    expect(response.type).toHaveBeenCalledWith('html');
+    expect(response.send).toHaveBeenCalledWith(expect.stringContaining('global create disabled'));
+    expect(response.send).toHaveBeenCalledWith(expect.stringContaining('kindTab-workout'));
+    expect(response.send).not.toHaveBeenCalledWith(expect.stringContaining('<option value="global" disabled>global</option>'));
   });
 });

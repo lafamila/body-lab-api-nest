@@ -1,7 +1,20 @@
 import { IsBoolean, IsIn, IsNumber, IsObject, IsOptional, IsString, Matches } from 'class-validator';
 
 export type PredictionConfigKind = 'global' | 'meal' | 'drink' | 'bathroom' | 'workout';
-export type PredictionConfigMetadata = Record<string, unknown>;
+export type PredictionConfigInputMode = 'portion_size' | 'ml' | 'minutes' | 'times' | 'none';
+
+export interface PredictionConfigMetadata extends Record<string, unknown> {
+  description?: string;
+  setupText?: string;
+  inputHint?: string;
+  unit?: string;
+  requiredInSetup?: boolean;
+  iconKey?: string;
+  inputMode?: PredictionConfigInputMode;
+  defaultAmount?: number;
+  defaultUnit?: string;
+  shortcutKey?: string;
+}
 
 export class PredictionConfigItemDto {
   id!: string;
