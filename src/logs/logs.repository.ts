@@ -113,8 +113,8 @@ export class LogsRepository {
     accountId: string,
     payload: LogPayload,
   ): Promise<StoredLog> {
-    if (resource === 'weights') {
-      const existing = await this.updateExistingWeightForDate(query, accountId, payload);
+    if (resource === 'health-imports') {
+      const existing = await this.updateExistingHealthImportForDate(query, accountId, payload);
       if (existing) {
         return existing;
       }
@@ -136,47 +136,78 @@ export class LogsRepository {
     return this.toApi(result.rows[0]);
   }
 
-  private async updateExistingWeightForDate(
+  private async updateExistingHealthImportForDate(
     query: DatabaseService['query'],
     accountId: string,
     payload: LogPayload,
   ): Promise<StoredLog | null> {
     const record = payload as Record<string, unknown>;
-    if (!record.measuredAt || typeof record.valueKg === 'undefined') {
+    if (!record.periodStart || !record.periodEnd || !record.sourceType || typeof record.metric === 'undefined') {
       return null;
     }
 
-    const [start, end] = this.utcDayBounds(String(record.measuredAt));
-    const hasSource = Object.prototype.hasOwnProperty.call(record, 'source');
-    const hasNote = Object.prototype.hasOwnProperty.call(record, 'note');
+    const [start, end] = this.utcDayBounds(String(record.periodStart));
+    const hasExternalId = Object.prototype.hasOwnProperty.call(record, 'externalId');
+    const hasMetadata = Object.prototype.hasOwnProperty.call(record, 'metadata');
+    const hasClientEventId = Object.prototype.hasOwnProperty.call(record, 'clientEventId');
     const result = await query(
       `
-        update body_weight_logs
-        set measured_at = $4,
-            value_kg = $5,
-            source = case when $6::boolean then $7 else source end,
-            note = case when $8::boolean then $9 else note end,
+        update health_import_summaries
+        set period_start = $5,
+            period_end = $6,
+            external_id = case when $7::boolean then $8 else external_id end,
+            metric = $9::jsonb,
+            metadata = case when $10::boolean then $11::jsonb else metadata end,
+            client_event_id = case when $12::boolean then $13 else client_event_id end,
             updated_at = now(),
             deleted_at = null
-        where account_id = $1
-          and measured_at >= $2
-          and measured_at < $3
-          and deleted_at is null
+        where id = (
+          select id
+          from health_import_summaries
+          where account_id = $1
+            and period_start >= $2
+            and period_start < $3
+            and source_type = $4
+            and deleted_at is null
+          order by updated_at desc, id desc
+          limit 1
+        )
         returning *
       `,
       [
         accountId,
         start,
         end,
-        record.measuredAt,
-        record.valueKg,
-        hasSource,
-        hasSource ? record.source : null,
-        hasNote,
-        hasNote ? record.note : null,
+        record.sourceType,
+        record.periodStart,
+        record.periodEnd,
+        hasExternalId,
+        hasExternalId ? record.externalId : null,
+        JSON.stringify(record.metric ?? {}),
+        hasMetadata,
+        JSON.stringify(record.metadata ?? {}),
+        hasClientEventId,
+        hasClientEventId ? record.clientEventId : null,
       ],
     );
-    return result.rowCount ? this.toApi(result.rows[0]) : null;
+    if (!result.rowCount) {
+      return null;
+    }
+
+    await query(
+      `
+        update health_import_summaries
+        set deleted_at = now(), updated_at = now()
+        where account_id = $1
+          and period_start >= $2
+          and period_start < $3
+          and source_type = $4
+          and deleted_at is null
+          and id <> $5
+      `,
+      [accountId, start, end, record.sourceType, result.rows[0].id],
+    );
+    return this.toApi(result.rows[0]);
   }
 
   private utcDayBounds(isoDate: string): [string, string] {

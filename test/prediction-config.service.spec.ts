@@ -109,6 +109,7 @@ describe('PredictionConfigService', () => {
       'fasting_hour_kg',
       'steps_10000_kg',
       'daily_base_delta_kg',
+      'next_day_fasted_weight_hour',
     ]);
     expect(status.missingKinds).toEqual(['drink', 'bathroom', 'workout']);
     expect(status.requiredGlobals[0]).toMatchObject({

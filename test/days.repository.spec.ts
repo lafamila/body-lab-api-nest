@@ -3,10 +3,10 @@ import { DaysRepository } from '../src/days/days.repository';
 describe('DaysRepository', () => {
   const config = { localTimeZone: 'Asia/Seoul' };
 
-  it('updates an existing daily weight by client_event_id before trying to insert', async () => {
-    const transactionQuery = jest.fn(async (sql: string, _params: readonly unknown[] = []) => {
-      if (sql.includes('where account_id = $1') && sql.includes('and client_event_id = $4')) {
-        return { rows: [{ id: 'weight-1' }], rowCount: 1 };
+  it('inserts a new weight measurement when upserting a day weight', async () => {
+    const transactionQuery = jest.fn(async (sql: string, params: readonly unknown[] = []) => {
+      if (sql.includes('insert into body_weight_logs')) {
+        return { rows: [{ id: 'weight-1', client_event_id: params[3] }], rowCount: 1 };
       }
       throw new Error(`Unexpected transaction query: ${sql}`);
     });
@@ -21,7 +21,8 @@ describe('DaysRepository', () => {
                 account_id: 'account-1',
                 measured_at: '2026-06-10T23:00:00.000Z',
                 value_kg: '72.2',
-                client_event_id: 'daily-weight:2026-06-11',
+                local_date: '2026-06-11',
+                client_event_id: 'weight:2026-06-10T23:00:00.000Z:1',
               },
             ],
             rowCount: 1,
@@ -38,23 +39,23 @@ describe('DaysRepository', () => {
     });
 
     expect(day.weight).toMatchObject({ id: 'weight-1', valueKg: 72.2 });
+    expect(day.weights).toHaveLength(1);
     expect(transactionQuery).toHaveBeenCalledTimes(1);
-    expect(transactionQuery.mock.calls[0][0]).toContain('and client_event_id = $4');
+    expect(transactionQuery.mock.calls[0][0]).toContain('insert into body_weight_logs');
     expect(transactionQuery.mock.calls[0][1]).toEqual([
       'account-1',
       '2026-06-10T23:00:00.000Z',
       72.2,
-      'daily-weight:2026-06-11',
+      expect.stringMatching(/^weight:2026-06-10T23:00:00\.000Z:/),
     ]);
     expect(database.query.mock.calls[0][1]).toEqual([
       'account-1',
       '2026-06-11',
-      'daily-weight:2026-06-11',
       'Asia/Seoul',
     ]);
   });
 
-  it('loads daily weight by local date client event id even when the stored timestamp is the previous UTC day', async () => {
+  it('loads same-day weights by local date even when the stored timestamp is the previous UTC day', async () => {
     const database = {
       query: jest.fn(async (sql: string, _params: readonly unknown[] = []) => {
         if (sql.includes('from body_weight_logs')) {
@@ -65,7 +66,8 @@ describe('DaysRepository', () => {
                 account_id: 'account-1',
                 measured_at: '2026-06-10T22:00:00.000Z',
                 value_kg: '72.2',
-                client_event_id: 'daily-weight:2026-06-11',
+                local_date: '2026-06-11',
+                client_event_id: 'weight-1',
               },
             ],
             rowCount: 1,
@@ -79,12 +81,11 @@ describe('DaysRepository', () => {
     const day = await repository.getDay('account-1', '2026-06-11');
 
     expect(day.weight).toMatchObject({ id: 'weight-1', valueKg: 72.2 });
-    expect(database.query.mock.calls[0][0]).toContain('client_event_id = $3');
-    expect(database.query.mock.calls[0][0]).toContain('measured_at at time zone $4');
+    expect(day.weights).toEqual([expect.objectContaining({ id: 'weight-1', valueKg: 72.2 })]);
+    expect(database.query.mock.calls[0][0]).toContain('measured_at at time zone $3');
     expect(database.query.mock.calls[0][1]).toEqual([
       'account-1',
       '2026-06-11',
-      'daily-weight:2026-06-11',
       'Asia/Seoul',
     ]);
   });

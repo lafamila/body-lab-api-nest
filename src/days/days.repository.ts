@@ -6,6 +6,7 @@ export interface DaySnapshot {
   date: string;
   contextDates: string[];
   weight: Record<string, unknown> | null;
+  weights: Record<string, unknown>[];
   meals: Record<string, unknown>[];
   drinks: Record<string, unknown>[];
   bathroom: Record<string, unknown>[];
@@ -27,22 +28,35 @@ export class DaysRepository {
   ) {}
 
   async getDay(accountId: string, localDate: string): Promise<DaySnapshot> {
-    const dailyWeightClientEventId = `daily-weight:${localDate}`;
     const contextDates = this.contextDates(localDate);
     const [weights, meals, drinks, bathroom, manualWorkouts, healthImports, predictions] = await Promise.all([
       this.database.query(
         `
-          select *
-          from body_weight_logs
-          where account_id = $1
-            and deleted_at is null
-            and (
-              client_event_id = $3
-              or (measured_at at time zone $4)::date = $2::date
-            )
-          order by case when client_event_id = $3 then 0 else 1 end, measured_at asc
+          with context_weights as (
+            select *, (measured_at at time zone $3)::date as local_date
+            from body_weight_logs
+            where account_id = $1
+              and (measured_at at time zone $3)::date between ($2::date - interval '1 day') and ($2::date + interval '1 day')
+              and deleted_at is null
+          ),
+          latest_baseline as (
+            select *, (measured_at at time zone $3)::date as local_date
+            from body_weight_logs
+            where account_id = $1
+              and measured_at < (($2::date + interval '2 day') at time zone $3)
+              and deleted_at is null
+            order by measured_at desc, updated_at desc, id desc
+            limit 1
+          )
+          select distinct on (id) *
+          from (
+            select * from context_weights
+            union all
+            select * from latest_baseline
+          ) combined
+          order by id, measured_at asc
         `,
-        [accountId, localDate, dailyWeightClientEventId, this.config.localTimeZone],
+        [accountId, localDate, this.config.localTimeZone],
       ),
       this.contextRows('meal_logs', 'occurred_at', accountId, localDate),
       this.contextRows('drink_logs', 'occurred_at', accountId, localDate),
@@ -62,10 +76,18 @@ export class DaysRepository {
       ),
     ]);
 
+    const weightRows = weights.rows.map((row) => this.toApi(row)).sort((lhs, rhs) => {
+      const lhsTime = String(lhs.measuredAt ?? '');
+      const rhsTime = String(rhs.measuredAt ?? '');
+      return lhsTime.localeCompare(rhsTime);
+    });
+    const sameDayWeights = weightRows.filter((row) => row.date === localDate);
+
     return {
       date: localDate,
       contextDates,
-      weight: weights.rows[0] ? this.toApi(weights.rows[0]) : null,
+      weight: sameDayWeights.at(-1) ?? null,
+      weights: weightRows,
       meals: meals.rows.map((row) => this.toApi(row)),
       drinks: drinks.rows.map((row) => this.toApi(row)),
       bathroom: bathroom.rows.map((row) => this.toApi(row)),
@@ -79,50 +101,14 @@ export class DaysRepository {
     await this.database.transaction(async (query) => {
       if (typeof payload.morningWeightKg !== 'undefined') {
         const measuredAt = payload.morningWeightMeasuredAt ?? `${localDate}T07:00:00.000Z`;
-        const clientEventId = `daily-weight:${localDate}`;
-        const existingDailyWeight = await query(
+        const clientEventId = `weight:${measuredAt}:${Date.now()}`;
+        await query(
           `
-            update body_weight_logs
-            set measured_at = $2,
-                value_kg = $3,
-                source = 'manual',
-                updated_at = now(),
-                deleted_at = null
-            where account_id = $1
-              and client_event_id = $4
-            returning *
+            insert into body_weight_logs (account_id, measured_at, value_kg, source, client_event_id)
+            values ($1, $2, $3, 'manual', $4)
           `,
           [accountId, measuredAt, payload.morningWeightKg, clientEventId],
         );
-        if (existingDailyWeight.rowCount) {
-          return;
-        }
-
-        const updated = await query(
-          `
-            update body_weight_logs
-            set measured_at = $4,
-                value_kg = $5,
-                source = 'manual',
-                client_event_id = $6,
-                updated_at = now(),
-                deleted_at = null
-            where account_id = $1
-              and (measured_at at time zone $2)::date = $3::date
-              and deleted_at is null
-            returning *
-          `,
-          [accountId, this.config.localTimeZone, localDate, measuredAt, payload.morningWeightKg, clientEventId],
-        );
-        if (!updated.rowCount) {
-          await query(
-            `
-              insert into body_weight_logs (account_id, measured_at, value_kg, source, client_event_id)
-              values ($1, $2, $3, 'manual', $4)
-            `,
-            [accountId, measuredAt, payload.morningWeightKg, clientEventId],
-          );
-        }
       }
     });
 

@@ -3,14 +3,14 @@ insert into prediction_config_items
 values
   (
     'global',
-    'daily_base_delta_kg',
-    'Daily base delta kg',
-    -0.2000,
+    'next_day_fasted_weight_hour',
+    'Next-day fasted weight hour',
+    7.0000,
     null,
     null,
-    45,
+    50,
     true,
-    '{"description":"Weight delta applied once per day between the baseline fasted weight time and the prediction target time.","setupText":"Set the automatic daily prediction offset.","inputHint":"Use kg per day. Example: -0.2 reduces the next-day forecast by 0.2.","unit":"kg/day","requiredInSetup":true}'::jsonb
+    '{"description":"Local hour used for the next-day fasted weight target.","setupText":"Set the local hour for next-day fasted weight prediction.","inputHint":"Use local hour, 0-23. Example: 7 means 07:00.","unit":"hour","requiredInSetup":true}'::jsonb
   )
 on conflict (kind, key) where kind = 'global' and account_id is null do update set
   label = excluded.label,

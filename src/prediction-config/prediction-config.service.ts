@@ -9,6 +9,7 @@ const REQUIRED_GLOBALS: { key: string; label: string }[] = [
   { key: 'fasting_hour_kg', label: 'Fasting kg per hour' },
   { key: 'steps_10000_kg', label: 'Steps kg per 10000' },
   { key: 'daily_base_delta_kg', label: 'Daily base delta kg' },
+  { key: 'next_day_fasted_weight_hour', label: 'Next-day fasted weight hour' },
 ];
 const REQUIRED_KINDS: Exclude<PredictionConfigKind, 'global'>[] = ['meal', 'drink', 'bathroom', 'workout'];
 
